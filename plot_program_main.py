@@ -145,11 +145,7 @@ class App(customtkinter.CTk):
 
         return slider
     
-    def update_value(self, value, slider_value, label):
-        slider_value.set(str(round(value, 2)))  # Update the StringVar
-        if label:
-            label["text"] = str(round(value, 2))  # Update the label text
-            
+
     def initialize_plot(self):
         if not self.initialize_plot_has_been_called:
             self.initialize_plot_has_been_called = True
@@ -265,15 +261,13 @@ class App(customtkinter.CTk):
         
     def use_labels(self):
         if self.uselabels_button.get() == 1:
-            self.ent_xlabel      = self.create_entry(column=1, row=self.row, width=200)
-            self.ent_ylabel      = self.create_entry(column=1, row=self.row+1, width=200)
-            self.ent_xlabel_text = self.create_label(text="x label", width=20, row=self.row, column=0, anchor='e', sticky='e')
-            self.ent_ylabel_text = self.create_label(text="y label", width=20, row=self.row+1, column=0, anchor='e', sticky='e')
+            self.ent_xlabel      = self.create_entry(column=1, text="x label", row=self.row, width=200)
+            self.ent_ylabel      = self.create_entry(column=1, text="y label", row=self.row+1, width=200)
             self.ent_legend      = self.create_entry(column=2, row=self.row+1, width=200)
             self.ent_legend_text = self.create_label(text="legend label", width=20, row=self.row, column=2, anchor='e', sticky='w', padx=10)
             self.row += 2 
         else:
-            for name in ["ent_xlabel","ent_ylabel","ent_xlabel_text","ent_ylabel_text","ent_legend","ent_legend_text"]:
+            for name in ["ent_xlabel","ent_ylabel","ent_legend","ent_legend_text"]:
                 getattr(self, name).grid_remove()
             self.row -= 2
     
@@ -308,7 +302,7 @@ class App(customtkinter.CTk):
         if self.normalize_type == "maximum":
             self.data[:, 1] /= np.max(self.data[:, 1])
         if self.normalize_type == "area":
-            self.data[:, 1] /= np.sum(self.data[:, 1])
+            self.data[:, 1] /= (np.sum(self.data[:, 1])*abs(self.data[0,0]-self.data[1,0]))
         self.ymax = np.max(self.data[:,1])
             
     def skip_rows(self, file_path):
