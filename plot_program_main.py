@@ -4,7 +4,7 @@ Created on Sun Sep 18 14:28:26 2022
 
 @author: Martin
 """
-
+import tkinter
 import os
 import customtkinter
 import numpy as np
@@ -49,7 +49,7 @@ class App(customtkinter.CTk):
         customtkinter.set_appearance_mode("dark")
         customtkinter.set_default_color_theme("dark-blue")
         self.title("Graph interactive editor for smooth visualization GIES v.1.0")
-        self.geometry("800x700")
+        self.geometry("1100x600")
         self.replot = False
         self.initialize_ui()
         self.initialize_plot_has_been_called = False
@@ -73,46 +73,69 @@ class App(customtkinter.CTk):
         self.function = gauss
         self.params = [1,1030,10,0]
         self.fitted_params = [0,0,0,0]
-        self.color_theme = "dark"
         self.color = "#1a1a1a"
         self.normalize_type = "maximum"
+        
+        # >>>>>>>>>>>>>>>> test area
+        self.my_frame = Table(master=self, data=np.loadtxt(os.path.join(self.folder_path.get(), self.optmenu.get()))[:,0:2], width=100, height=200, corner_radius=0, fg_color="transparent")
+        self.my_frame.grid(row=11, column=2, sticky="nsew", pady=(20,10))
+        # <<<<<<<<<<<<<<<< test area
+        
         
     # user interface, gets called when the program starts 
     def initialize_ui(self):
 
+        self.sidebar_frame = customtkinter.CTkFrame(self, width=200, height=600, corner_radius=0)
+        self.sidebar_frame.grid(row=0, column=0, rowspan=999, sticky="nesw")
+        self.sidebar_frame.rowconfigure(12, weight=1)
+        self.rowconfigure(11,weight=1)
+
+        App.create_label(self.sidebar_frame, text="GIES v.1.0", font=customtkinter.CTkFont(size=20, weight="bold"),width=20, row=0, column=0, padx=20, pady=(20, 10))
+        
         #buttons
-        self.plot_button        = self.create_button(text="Plot graph", command=self.initialize_plot, column=1, row=3, width=200)
-        self.plot2_button       = self.create_button(text="Reset", command=self.initialize_plot,      column=1, row=3, width=90, sticky="w", padx = (10,120))   # Multiplot button
-        self.addplot_button     = self.create_button(text="Multiplot", command=self.plot,             column=1, row=3, width=90, sticky="e", padx = (120,10))   # Multiplot button
-        self.load_button        = self.create_button(text="\U0001F4C1 Load Folder", command=self.read_file_list,column=3, row=0, width=200)
-        self.save_button        = self.create_button(text="\U0001F4BE Save Figure", command=self.save_figure,   column=2, row=3, width=200)
-        self.settings1_button   = self.create_button(text="Plot settings", command = lambda: self.open_toplevel(SettingsWindow), column=2, row=4, width=90, padx = (10,120))
-        self.settings2_button   = self.create_button(text="Fit settings",command = lambda: self.open_toplevel(FitWindow), column=2, row=4, width=90, padx = (120,10))
-        self.prev_button        = self.create_button(text="<<", command=lambda: self.change_plot(self.replot,-1),         column=1, row=4, width=90, padx = (10,120))
-        self.next_button        = self.create_button(text=">>", command=lambda: self.change_plot(self.replot,1),          column=1, row=4, width=90, padx = (120,10))
+        frame = self.sidebar_frame
+        
+        self.plot_button        = App.create_button(frame, text="Plot graph",             command=self.initialize_plot, column=0, row=5, width=200, pady=(15,5))
+        self.plot2_button       = App.create_button(frame, text="Reset",                  command=self.initialize_plot, column=0, row=5, width=90, padx = (10,120), pady=(15,5))   # Multiplot button
+        self.addplot_button     = App.create_button(frame, text="Multiplot",              command=self.plot,            column=0, row=5, width=90, padx = (120,10), pady=(15,5))   # Multiplot button
+        self.load_button        = App.create_button(frame, text="\U0001F4C1 Load Folder", command=self.read_file_list,  column=0, row=1, width=200)
+        self.save_button        = App.create_button(frame, text="\U0001F4BE Save Figure", command=self.save_figure,     column=0, row=3, width=200)
+        self.settings1_button   = App.create_button(frame, text="Plot settings",          command = lambda: self.open_toplevel(SettingsWindow), column=0, row=4, width=90, padx = (10,120))
+        self.settings2_button   = App.create_button(frame, text="Fit settings",           command = lambda: self.open_toplevel(FitWindow), column=0, row=4, width=90, padx = (120,10))
+        self.prev_button        = App.create_button(frame, text="<<",                     command=lambda: self.change_plot(self.replot,-1), column=0, row=6, width=90, padx = (10,120))
+        self.next_button        = App.create_button(frame, text=">>",                     command=lambda: self.change_plot(self.replot,1), column=0, row=6, width=90, padx = (120,10))
         
         #switches
-        self.multiplot_button   = self.create_switch(text="Multiplot", command=self.multiplot,  column=3, row=2, width=200)
-        self.uselabels_button   = self.create_switch(text="Use labels", command=self.use_labels,  column=3, row=3, width=200)
-        self.uselims_button     = self.create_switch(text="Use limits", command=self.use_limits,  column=3, row=4, width=200)
-        self.normalize_button   = self.create_switch(text="Normalize", command=self.normalize_setup,    column=3, row=5, width=200)
+        self.multiplot_button   = App.create_switch(frame, text="Multiplot", command=self.multiplot,  column=0, row=7, width=200, sticky='w', padx=20, pady=(10,5))
+        self.uselabels_button   = App.create_switch(frame, text="Use labels", command=self.use_labels,  column=0, row=8, width=200, sticky='w', padx=20)
+        self.uselims_button     = App.create_switch(frame, text="Use limits", command=self.use_limits,  column=0, row=9, width=200, sticky='w', padx=20)
+        self.normalize_button   = App.create_switch(frame, text="Normalize", command=self.normalize_setup,    column=0, row=10, width=200, sticky='w', padx=20)
+        
+        
+        self.settings_frame = customtkinter.CTkFrame(self, width=1, height=600, corner_radius=0)
+        self.settings_frame.grid(row=0, column=4, rowspan=999, sticky="nesw")
+        self.columnconfigure(2,weight=1)
+        # self.columnconfigure(1,weight=1)
+        
+        self.appearance_mode_label = App.create_label(self.sidebar_frame, text="Appearance Mode:", width=20, row=13, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.appearance_mode_optionemenu = App.create_optionMenu(self.sidebar_frame, values=["Dark","Light", "System"], command=self.change_appearance_mode_event, width=200, row=14, column=0, padx=20, pady=(5,10))
         
         #entries
-        self.folder_path        = self.create_entry(column=1, row=0, text="Folder path", columnspan=2, width=415, padx=10, pady=10)
+        self.folder_path = self.create_entry(column=2, row=0, text="Folder path", columnspan=2, width=600, padx=10, pady=10, sticky="w")
         
         #dropdown menu
-        self.optmenu = self.create_combobox(values=filelist, text="File name",row=2, column=1, columnspan=2, width=415)
+        self.optmenu = self.create_combobox(values=filelist, text="File name",row=1, column=2, columnspan=2, width=600, sticky="w")
         if not filelist == []: self.optmenu.set(filelist[0])
 
 
-    def create_label(self, width, row, column, text=None, anchor='e', sticky=None, textvariable=None, padx=None, pady=None, columnspan=1, **kwargs):
-        label = customtkinter.CTkLabel(self, text=text, textvariable=textvariable, width=width, anchor=anchor, **kwargs)
+    def create_label(self, width, row, column, text=None, anchor='e', sticky=None, textvariable=None, padx=None, pady=None, font=None, columnspan=1, **kwargs):
+        label = customtkinter.CTkLabel(self, text=text, textvariable=textvariable, width=width, anchor=anchor, font=font,  **kwargs)
         label.grid(row=row, column=column, sticky=sticky, columnspan=columnspan, padx=padx, pady=pady, **kwargs)
         return label
 
-    def create_entry(self, width, row, column, text=None, columnspan=1, padx=10, pady=5, placeholder_text=None, **kwargs):
+    def create_entry(self, width, row, column, text=None, columnspan=1, padx=10, pady=5, placeholder_text=None, sticky="n", **kwargs):
         entry = customtkinter.CTkEntry(self, width, placeholder_text=placeholder_text, **kwargs)
-        entry.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, **kwargs)
+        entry.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if text is not None:
             App.create_label(self, text=text, column=column-1, row=row, width=80, anchor='e', sticky='e')
         return entry
@@ -122,16 +145,23 @@ class App(customtkinter.CTk):
         button.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         return button
 
-    def create_switch(self, text, command, width, row, column, columnspan=1, padx=10, pady=5, **kwargs):
+    def create_switch(self, text, command, width, row, column, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
         switch = customtkinter.CTkSwitch(self, text=text, command=command, **kwargs)
-        switch.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, **kwargs)
+        switch.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         return switch
     
-    def create_combobox(self, values, width, column, row, state='readonly', command=None, text=None, columnspan=1, padx=10, pady=5, **kwargs):
+    def create_combobox(self, values, width, column, row, state='readonly', command=None, text=None, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
         combobox = customtkinter.CTkComboBox(self, values=values, command=command, state=state, width=width, **kwargs)
-        combobox.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, **kwargs)
+        combobox.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if text is not None:
             App.create_label(self, text=text, column=column-1, row=row, width=80, anchor='e',pady=pady, sticky='e')
+        return combobox
+    
+    def create_optionMenu(self, values, column, row, command=None, text=None, width=None, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
+        combobox = customtkinter.CTkOptionMenu(self, values=values, width=width, command=command, **kwargs)
+        combobox.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
+        if text is not None:
+            App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e', pady=pady, sticky='e')
         return combobox
     
     def create_slider(self, from_, to, width, row, column, text=None, init_value=None, command=None, columnspan=1, number_of_steps=1000, padx = 10, pady=5, **kwargs):
@@ -150,15 +180,13 @@ class App(customtkinter.CTk):
         if not self.initialize_plot_has_been_called:
             self.initialize_plot_has_been_called = True
             
-        
-        self.fig = Figure(figsize=(5, 2.8), dpi=150)
-        self.ax1 = self.fig.add_subplot(111)
+        self.fig, self.ax1 = plt.subplots(1,1, figsize=(15,4),constrained_layout=True, dpi=150)
         self.ax1.set_prop_cycle(cycler(color=plt.get_cmap(self.cmap).colors))
         if self.uselabels_button.get() == 1:
             self.ax1.set_xlabel(self.ent_xlabel.get())
             self.ax1.set_ylabel(self.ent_ylabel.get())
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
-        self.canvas.get_tk_widget().grid(row=11, column=1, columnspan=3, pady=(20,0))
+        self.canvas.get_tk_widget().grid(row=11, column=1, columnspan=3,padx=20, pady=(15,0), sticky='ns')
         self.create_toolbar()
         self.ymax = 0
         self.plot()
@@ -171,7 +199,7 @@ class App(customtkinter.CTk):
         toolbar._message_label.config(background=self.color, foreground="white")
         toolbar.winfo_children()[-2].config(background=self.color)
         toolbar.update()
-        self.fig.tight_layout()
+        
 
     def plot(self):
         if not self.initialize_plot_has_been_called:
@@ -195,6 +223,8 @@ class App(customtkinter.CTk):
         if self.use_fit == 1:
             self.ax1.plot(self.data[:, 0], self.fit_plot(self.function, self.params), linestyle=self.linestyle, marker=self.markers, lw=self.linewidth)
         self.update_plot()
+        # self.fig.tight_layout(pad=2)
+        
 
     def update_plot(self):
         if self.normalize_button.get() == 1:
@@ -234,42 +264,55 @@ class App(customtkinter.CTk):
     def use_limits(self):
         if not self.initialize_plot_has_been_called: return
         if self.uselims_button.get() == 1:
-            self.labx = self.create_label(text="x limits", column=0, row=self.row, width=20, anchor='e', sticky='e')
-            self.laby = self.create_label(text="y limits", column=0, row=self.row+1, width=20, anchor='e', sticky='e')
+            
+            self.settings_frame.grid()
+            self.limits_title = App.create_label(self.settings_frame, text="Limits", font=customtkinter.CTkFont(size=16, weight="bold"),width=20, row=self.row-1, column=0, columnspan=2, padx=20, pady=(20, 10))
+            self.labx = App.create_label(self.settings_frame, text="x limits", column=0, row=self.row, width=20, sticky='e', padx=(10,5))
+            self.laby = App.create_label(self.settings_frame, text="y limits", column=0, row=self.row+2, width=20, sticky='e', padx=(10,5))
 
             # Slider
-            self.xlim_l = self.create_slider(from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), width=170, 
-                                             command=lambda val: self.update_plot(), row=self.row, column =1)
-            self.xlim_r = self.create_slider(from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), width=170, 
-                                             command=lambda val: self.update_plot(), row=self.row, column =2)
-            self.ylim_l = self.create_slider(from_=np.min(self.data[:,1]), to=np.max(self.ymax), width=170, 
-                                             command=lambda val: self.update_plot(), row=self.row+1, column =1)
-            self.ylim_r = self.create_slider(from_=np.min(self.data[:,1]), to=np.max(self.ymax), width=170, 
-                                             command=lambda val: self.update_plot(), row=self.row+1, column =2)
+            self.xlim_l = App.create_slider(self.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), width=150, 
+                                             command=lambda val: self.update_plot(), row=self.row, column =1, sticky='w', padx=(5,15))
+            self.xlim_r = App.create_slider(self.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), width=150, 
+                                             command=lambda val: self.update_plot(), row=self.row+1, column =1, sticky='w', padx=(5,15))
+            self.ylim_l = App.create_slider(self.settings_frame, from_=np.min(self.data[:,1]), to=np.max(self.ymax), width=150, 
+                                             command=lambda val: self.update_plot(), row=self.row+2, column =1, sticky='w', padx=(5,15))
+            self.ylim_r = App.create_slider(self.settings_frame, from_=np.min(self.data[:,1]), to=np.max(self.ymax), width=150, 
+                                             command=lambda val: self.update_plot(), row=self.row+3, column =1, sticky='w', padx=(5,15))
 
             self.xlim_l.set(np.min(self.data[:, 0]))
             self.xlim_r.set(np.max(self.data[:, 0]))
             self.ylim_l.set(np.min(self.data[:, 1]))
             self.ylim_r.set(self.ymax)
-            self.row += 2
+            self.row += 5
+            # self.columnconfigure(4,weight=1)
         else:
-            for name in ["xlim_l","xlim_r","ylim_l","ylim_r","labx","laby"]:
+            for name in ["xlim_l","xlim_r","ylim_l","ylim_r","labx","laby","limits_title"]:
                 getattr(self, name).grid_remove()
+                
+            if self.uselabels_button.get() == 0:
+                self.settings_frame.grid_remove()
 
-            self.row -= 2
+            self.row -= 5
         self.update_plot()
         
     def use_labels(self):
         if self.uselabels_button.get() == 1:
-            self.ent_xlabel      = self.create_entry(column=1, text="x label", row=self.row, width=200)
-            self.ent_ylabel      = self.create_entry(column=1, text="y label", row=self.row+1, width=200)
-            self.ent_legend      = self.create_entry(column=2, row=self.row+1, width=200)
-            self.ent_legend_text = self.create_label(text="legend label", width=20, row=self.row, column=2, anchor='e', sticky='w', padx=10)
-            self.row += 2 
+            self.settings_frame.grid()
+            self.labels_title = App.create_label(self.settings_frame, text="Labels", font=customtkinter.CTkFont(size=16, weight="bold"),width=20, row=self.row-1, column=0, columnspan=2, padx=20, pady=(20, 10))
+            self.ent_xlabel      = App.create_entry(self.settings_frame,column=1, row=self.row, width=150, sticky='w')
+            self.ent_xlabel_text = App.create_label(self.settings_frame,column=0, text="x label", row=self.row, width=20,padx=(10,5))
+            self.ent_ylabel      = App.create_entry(self.settings_frame,column=1, row=self.row+1, width=150, sticky='w')
+            self.ent_ylabel_text = App.create_label(self.settings_frame,column=0, text="y label", row=self.row+1, width=20,padx=(10,5))
+            self.ent_legend      = App.create_entry(self.settings_frame,column=1, row=self.row+2, width=150, sticky='w')
+            self.ent_legend_text = App.create_label(self.settings_frame,text="legend", width=20, row=self.row+2, column=0,padx=(10,5))
+            self.row += 4 
         else:
-            for name in ["ent_xlabel","ent_ylabel","ent_legend","ent_legend_text"]:
+            for name in ["ent_xlabel","ent_xlabel_text","ent_ylabel","ent_ylabel_text","ent_legend","ent_legend_text","labels_title"]:
                 getattr(self, name).grid_remove()
-            self.row -= 2
+            if self.uselims_button.get() == 0:
+                self.settings_frame.grid_remove()
+            self.row -= 4
     
     def multiplot(self):
         self.replot = not self.replot
@@ -317,7 +360,7 @@ class App(customtkinter.CTk):
 
     def save_figure(self):
         file_name = customtkinter.filedialog.asksaveasfilename()
-        self.fig.savefig(file_name)
+        self.fig.savefig(file_name, bbox_inches='tight')
 
     def open_file(self, file_path):
         try:
@@ -333,7 +376,16 @@ class App(customtkinter.CTk):
             return ','
         else:
             print("No decimal separators (commas or dots) were found in the file.")
-            
+    
+    def change_appearance_mode_event(self, new_appearance_mode: str):
+        customtkinter.set_appearance_mode(new_appearance_mode)
+        if new_appearance_mode == "Light":
+            self.color = "#f2f2f2"
+        else:
+            self.color = "#1a1a1a"
+        if self.initialize_plot_has_been_called: 
+            self.create_toolbar()
+
             
     def open_toplevel(self,cls):
         if self.toplevel_window is None or not self.toplevel_window.winfo_exists():
@@ -342,9 +394,18 @@ class App(customtkinter.CTk):
         else:
             self.toplevel_window.focus()  # if window exists focus it
             
+            
     def on_closing(self):
         self.destroy()
 
+class UseLabels(customtkinter.CTkFrame):
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        self.app = app
+        # add widgets onto the frame, for example:
+        self.label = customtkinter.CTkLabel(self)
+        self.label.grid(row=0, column=0, padx=20)
+        
 # neues Fenster
 class SettingsWindow(customtkinter.CTkToplevel):
     def __init__(self, *args, **kwargs):
@@ -358,12 +419,14 @@ class SettingsWindow(customtkinter.CTkToplevel):
                       'Set1', 'Set2', 'Set3']
         
         # command funktioniert doch, muss noch implementiert werden für set_plot settings
-        self.linestyle_list     = App.create_combobox(self, values=list(self.values.keys()), text="line style", command=self.set_plot_settings,   width=200, column=1, row=0, pady=(20,5))
-        self.marker_list        = App.create_combobox(self, values=list(self.markers.keys()),text="marker",     command=self.set_plot_settings,   width=200, column=1, row=2)
-        self.cmap_list          = App.create_combobox(self, values=self.cmap,                text="colormap",   command=self.set_plot_settings,   width=200, column=1, row=3)
+        self.linestyle_list     = App.create_combobox(self, values=list(self.values.keys()), text="line style", 
+                                                      command=self.set_plot_settings,   width=200, column=1, row=0, pady=(20,5))
+        self.marker_list        = App.create_combobox(self, values=list(self.markers.keys()),text="marker",     
+                                                      command=self.set_plot_settings,   width=200, column=1, row=2)
+        self.cmap_list          = App.create_combobox(self, values=self.cmap,                text="colormap",   
+                                                      command=self.set_plot_settings,   width=200, column=1, row=3)
         self.reset_button       = App.create_button(self, text="Reset Settings",command=self.reset_values, width=130, column=3, row=0, pady=(20,5))
         self.linewidth_slider   = App.create_slider(self, init_value=1, from_=0.1, to=2, command=self.update_slider_value, text="line width", width=200, row=1, column=1, number_of_steps=10)
-        self.light_theme_button = App.create_switch(self, text="Use light theme", command=self.change_color_theme,  column=3, row=1, width=200)
         self.norm_switch_button = App.create_switch(self, text="Normalize 'Area'", command=self.change_normalize_function,  column=3, row=2, width=200)
         
         #labels        
@@ -376,8 +439,6 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.cmap_list.set(self.app.cmap)
         self.linewidth_slider.set(self.app.linewidth)
         self.update_slider_value(self.app.linewidth)
-        
-        if self.app.color_theme == "light": self.light_theme_button.select()
         if self.app.normalize_type == "area": self.light_theme_button.select()
    
     def reset_values(self):
@@ -397,16 +458,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app.markers=self.markers[self.marker_list.get()]
         self.app.cmap=self.cmap_list.get()
         self.app.linewidth=self.linewidth_slider.get()
-        
-    def change_color_theme(self):
-        if self.light_theme_button.get() == 1:
-            self.app.color_theme = "light"
-            self.app.color = "f2f2f2"
-        else:
-            self.app.color_theme = "dark" 
-            self.app.color = "#1a1a1a"
-        customtkinter.set_appearance_mode(self.app.color_theme)
-        app.create_toolbar()
+
     
     def change_normalize_function(self):
         if self.norm_switch_button.get() == 1:
@@ -496,6 +548,31 @@ class FitWindow(customtkinter.CTkToplevel):
 
         self.app.function = self.function[self.function_list.get()]
         self.app.use_fit = self.fit_switch.get()
+
+class Table(customtkinter.CTkScrollableFrame):
+    def __init__(self, master, data, **kwargs):
+        super().__init__(master, **kwargs)
+
+        self.columns = ("x", "y")
+        self.data = data
+        print(data)
+
+        self.text_widget = customtkinter.CTkTextbox(self, padx=10, pady=5)
+        self.text_widget.grid(row=0, column=0, sticky="nsew")
+        self.grid_columnconfigure(0, weight=1)
+        
+        self.text_widget.insert("1.0", "\t".join(self.columns) + "\n")
+
+        for row in self.data:
+            self.insert_data(row)
+
+    def insert_data(self, values):
+        if len(values) != len(self.columns):
+            raise ValueError(f"Number of values {len(values)} must match the number of columns {len(self.columns)}")
+
+        self.text_widget.insert("end", "\t".join(map(str, values)) + "\n")
+
+        self.update()
         
 if __name__ == "__main__":
     app = App()
