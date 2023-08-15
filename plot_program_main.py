@@ -19,6 +19,7 @@ from cycler import cycler
 from scipy.optimize import curve_fit as cf
 from inspect import signature # get number of arguments of a function
 
+version_number = "23/08"
 plt.style.use('default')
 matplotlib.rc('font', family='serif')
 matplotlib.rc('font', serif='Times New Roman')
@@ -48,7 +49,7 @@ class App(customtkinter.CTk):
         super().__init__()
         customtkinter.set_appearance_mode("dark")
         customtkinter.set_default_color_theme("dark-blue")
-        self.title("Graph interactive editor for smooth visualization GIES v.1.0")
+        self.title("Graph interactive editor for smooth visualization GIES v."+version_number)
         self.geometry("1100x600")
         self.replot = False
         self.initialize_ui()
@@ -75,6 +76,8 @@ class App(customtkinter.CTk):
         self.fitted_params = [0,0,0,0]
         self.color = "#1a1a1a"
         self.normalize_type = "maximum"
+        self.ax1 = None
+        self.plot_counter = 0
         
         
     # user interface, gets called when the program starts 
@@ -85,12 +88,12 @@ class App(customtkinter.CTk):
         self.sidebar_frame.rowconfigure(12, weight=1)
         self.rowconfigure(11,weight=1)
 
-        App.create_label(self.sidebar_frame, text="GIES v.1.0", font=customtkinter.CTkFont(size=20, weight="bold"),width=20, row=0, column=0, padx=20, pady=(20, 10))
+        App.create_label(self.sidebar_frame, text="GIES v."+version_number, font=customtkinter.CTkFont(size=20, weight="bold"),width=20, row=0, column=0, padx=20, pady=(20, 10))
         
         self.tabview = customtkinter.CTkTabview(self, width=250)
         self.tabview.grid(row=11, column=1, padx=(20, 0), pady=(20, 0), columnspan=2, sticky="nsew")
-        self.tabview.add("Plot")
-        self.tabview.add("Table")
+        self.tabview.add("Show Plots")
+        self.tabview.add("Data Table")
         # self.tabview.rowconfigure(0, weight=1)  # Make the plot area expandable vertically
         # self.tabview.columnconfigure(0, weight=1) 
         
@@ -180,13 +183,13 @@ class App(customtkinter.CTk):
 
         return slider
     
-    def create_table(self, data, header, width, row, column, **kwargs):
+    def create_table(self, data,  width, row, column,header=None, sticky=None, **kwargs):
         text_widget = customtkinter.CTkTextbox(self, width = width, padx=10, pady=5)
-        text_widget.pack(fill="both", expand=True)
-        # text_widget.grid(row=row, column=column, **kwargs)
-        text_widget.grid_columnconfigure(0, weight=1)
-        text_widget.grid_rowconfigure(0, weight=1)
-        text_widget.insert("1.0", "\t".join(header) + "\n")
+        # text_widget.pack(fill="y", expand=True)
+        text_widget.grid(row=row, column=column, sticky=sticky, **kwargs)
+        self.grid_rowconfigure(row, weight=1)
+        if header is not None:
+            text_widget.insert("1.0", "\t".join(header) + "\n")
 
         for row in data:
             text_widget.insert("end", " \t ".join(map(str, np.round(row,2))) + "\n")
@@ -194,6 +197,19 @@ class App(customtkinter.CTk):
     
 
     def initialize_plot(self):
+        
+        # Clear the previous plot content
+        if self.ax1 is not None:
+            self.ax1.clear()  
+            self.canvas.get_tk_widget().destroy()
+            self.toolbar.destroy()
+            for widget_key, widget in self.lists.items():
+                widget.destroy()
+            self.plot_counter = 0
+            plt.close(self.fig)
+            
+        
+        self.lists = {}
         if not self.initialize_plot_has_been_called:
             self.initialize_plot_has_been_called = True
             
@@ -202,23 +218,23 @@ class App(customtkinter.CTk):
         if self.uselabels_button.get() == 1:
             self.ax1.set_xlabel(self.ent_xlabel.get())
             self.ax1.set_ylabel(self.ent_ylabel.get())
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.tabview.tab("Plot"))
-        self.my_frame = App.create_table(self.tabview.tab("Table"), data=np.loadtxt(os.path.join(self.folder_path.get(), self.optmenu.get())), header=['x','y','dy'], width=400, sticky='nsw', row=0, column=0, pady=(20,10), padx=10)
-        # self.canvas.get_tk_widget().grid(row=11, column=1, columnspan=3,padx=20, pady=(15,0), sticky='ns')
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.tabview.tab("Show Plots"))
         # self.canvas.get_tk_widget().grid(row=0, column=0, columnspan=2,padx=20, pady=(15,0), sticky='nsew')
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
-        # self.create_toolbar()
+        self.toolbar = self.create_toolbar()
         self.ymax = 0
         self.plot()
 
     def create_toolbar(self):
-        toolbar_frame = customtkinter.CTkFrame(master=self.tabview.tab("Plot"))
-        toolbar_frame.grid(row=12, column=1, columnspan=3)
+        toolbar_frame = customtkinter.CTkFrame(master=self.tabview.tab("Show Plots"))
+        # toolbar_frame.grid(row=12, column=1, columnspan=3)
+        toolbar_frame.pack()
         toolbar = NavigationToolbar2Tk(self.canvas, toolbar_frame)
         toolbar.config(background=self.color)
         toolbar._message_label.config(background=self.color, foreground="white")
         toolbar.winfo_children()[-2].config(background=self.color)
         toolbar.update()
+        return toolbar_frame
         
 
     def plot(self):
@@ -232,30 +248,48 @@ class App(customtkinter.CTk):
             self.data = np.vstack((range(len(self.data)), self.data[:, 0])).T
 
         if self.normalize_button.get() == 1: self.normalize()
-        self.ymax = max([self.ymax, np.max(self.data[:, 1])])
         
-        if   self.uselabels_button.get() == 1: 
-            self.ax1.plot(self.data[:, 0], self.data[:, 1], linestyle=self.linestyle, marker=self.markers, lw=self.linewidth, label=self.ent_legend.get())
-            if self.ent_legend.get(): self.ax1.legend()
-        elif self.uselabels_button.get() == 0: 
-            self.ax1.plot(self.data[:, 0], self.data[:, 1], linestyle=self.linestyle, marker=self.markers, lw=self.linewidth)
-
+        # create dictionary of the plot key word arguments
+        plot_kwargs = dict(
+            linestyle = self.linestyle,
+            marker = self.markers,
+            linewidth = self.linewidth,
+            )
+        
+        if self.uselabels_button.get() == 1: 
+            plot_kwargs["label"] = self.ent_legend.get()
+            self.ax1.legend()
+            
+        if self.uselims_button.get() == 1:
+            self.ylim_l.set(np.min(self.data[:, 1]))
+            self.ylim_r.set(max(self.ymax,np.max(self.data[:,1])))
+            
+        # create the plot
+        self.ax1.plot(self.data[:, 0], self.data[:, 1], **plot_kwargs)
+        
+        # create the list
+        self.lists["self.my_frame{}".format(self.plot_counter)] = App.create_table(self.tabview.tab("Data Table"), data=self.data, width=300, sticky='ns', row=0, column=self.plot_counter, pady=(20,10), padx=10)
+        for widget_key, widget in self.lists.items():
+            widget.configure(width=min(300,0.75*self.tabview.winfo_width()/(1.1*self.plot_counter+1)))
+        
+        # create the fit
         if self.use_fit == 1:
-            self.ax1.plot(self.data[:, 0], self.fit_plot(self.function, self.params), linestyle=self.linestyle, marker=self.markers, lw=self.linewidth)
+            self.ax1.plot(self.data[:, 0], self.fit_plot(self.function, self.params), **plot_kwargs)
         self.update_plot()
-        # self.fig.tight_layout(pad=2)
+        self.plot_counter += 1
+        # self.fig.tight_layout()
         
 
     def update_plot(self):
-        if self.normalize_button.get() == 1:
-            self.data[:, 1] /= np.max(self.data[:, 1])
+        self.ymax = max(self.ymax,np.max(self.data[:,1]))
+        if self.normalize_button.get() == 1: self.normalize()
 
         if self.uselims_button.get() == 1:
             self.update_limits()
-            self.ax1.set_xlim(left=float(self.xlim_l.get()  - 0.08 * (self.xlim_r.get() - self.xlim_l.get())),
-                              right=float(self.xlim_r.get() + 0.08 * (self.xlim_r.get() - self.xlim_l.get())))
-            self.ax1.set_ylim(bottom=float(self.ylim_l.get()- 0.08 * (self.ylim_r.get() - self.ylim_l.get())),
-                              top=float(self.ylim_r.get()   + 0.08 * (self.ylim_r.get() - self.ylim_l.get())))
+            self.ax1.set_xlim(left=float(self.xlim_l.get()  - 0.05 * (self.xlim_r.get() - self.xlim_l.get())),
+                              right=float(self.xlim_r.get() + 0.05 * (self.xlim_r.get() - self.xlim_l.get())))
+            self.ax1.set_ylim(bottom=float(self.ylim_l.get()- 0.05 * (self.ylim_r.get() - self.ylim_l.get())),
+                              top=float(self.ylim_r.get()   + 0.05 * (self.ylim_r.get() - self.ylim_l.get())))
 
         self.canvas.draw()
 
@@ -351,7 +385,8 @@ class App(customtkinter.CTk):
         self.xlim_r.configure(from_=np.floor(np.min(self.data[:, 0])), to=np.ceil(np.max(self.data[:, 0])))
         self.ylim_l.configure(from_=np.min(self.data[:, 1]), to=self.ymax)
         self.ylim_r.configure(from_=np.min(self.data[:, 1]), to=self.ymax)
-    
+
+        
     def normalize_setup(self):
         if self.normalize_button.get() == 1:
             self.initialize_plot()
@@ -366,7 +401,8 @@ class App(customtkinter.CTk):
             self.data[:, 1] /= np.max(self.data[:, 1])
         if self.normalize_type == "area":
             self.data[:, 1] /= (np.sum(self.data[:, 1])*abs(self.data[0,0]-self.data[1,0]))
-        self.ymax = np.max(self.data[:,1])
+
+        self.ymax = max([self.ymax, np.max(self.data[:, 1])])
             
     def skip_rows(self, file_path):
         skiprows = 0
