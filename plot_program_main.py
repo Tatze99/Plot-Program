@@ -76,11 +76,6 @@ class App(customtkinter.CTk):
         self.color = "#1a1a1a"
         self.normalize_type = "maximum"
         
-        # >>>>>>>>>>>>>>>> test area
-        self.my_frame = Table(master=self, data=np.loadtxt(os.path.join(self.folder_path.get(), self.optmenu.get()))[:,0:2], width=100, height=200, corner_radius=0, fg_color="transparent")
-        self.my_frame.grid(row=11, column=2, sticky="nsew", pady=(20,10))
-        # <<<<<<<<<<<<<<<< test area
-        
         
     # user interface, gets called when the program starts 
     def initialize_ui(self):
@@ -92,6 +87,13 @@ class App(customtkinter.CTk):
 
         App.create_label(self.sidebar_frame, text="GIES v.1.0", font=customtkinter.CTkFont(size=20, weight="bold"),width=20, row=0, column=0, padx=20, pady=(20, 10))
         
+        self.tabview = customtkinter.CTkTabview(self, width=250)
+        self.tabview.grid(row=11, column=1, padx=(20, 0), pady=(20, 0), columnspan=2, sticky="nsew")
+        self.tabview.add("Plot")
+        self.tabview.add("Table")
+        # self.tabview.rowconfigure(0, weight=1)  # Make the plot area expandable vertically
+        # self.tabview.columnconfigure(0, weight=1) 
+        
         #buttons
         frame = self.sidebar_frame
         
@@ -100,8 +102,8 @@ class App(customtkinter.CTk):
         self.addplot_button     = App.create_button(frame, text="Multiplot",              command=self.plot,            column=0, row=5, width=90, padx = (120,10), pady=(15,5))   # Multiplot button
         self.load_button        = App.create_button(frame, text="\U0001F4C1 Load Folder", command=self.read_file_list,  column=0, row=1, width=200)
         self.save_button        = App.create_button(frame, text="\U0001F4BE Save Figure", command=self.save_figure,     column=0, row=3, width=200)
-        self.settings1_button   = App.create_button(frame, text="Plot settings",          command = lambda: self.open_toplevel(SettingsWindow), column=0, row=4, width=90, padx = (10,120))
-        self.settings2_button   = App.create_button(frame, text="Fit settings",           command = lambda: self.open_toplevel(FitWindow), column=0, row=4, width=90, padx = (120,10))
+        self.settings1_button   = App.create_button(frame, text="Plot settings",          command =lambda: self.open_toplevel(SettingsWindow), column=0, row=4, width=90, padx = (10,120))
+        self.settings2_button   = App.create_button(frame, text="Fit settings",           command =lambda: self.open_toplevel(FitWindow), column=0, row=4, width=90, padx = (120,10))
         self.prev_button        = App.create_button(frame, text="<<",                     command=lambda: self.change_plot(self.replot,-1), column=0, row=6, width=90, padx = (10,120))
         self.next_button        = App.create_button(frame, text=">>",                     command=lambda: self.change_plot(self.replot,1), column=0, row=6, width=90, padx = (120,10))
         
@@ -126,6 +128,9 @@ class App(customtkinter.CTk):
         #dropdown menu
         self.optmenu = self.create_combobox(values=filelist, text="File name",row=1, column=2, columnspan=2, width=600, sticky="w")
         if not filelist == []: self.optmenu.set(filelist[0])
+        
+        #table
+        # 
 
 
     def create_label(self, width, row, column, text=None, anchor='e', sticky=None, textvariable=None, padx=None, pady=None, font=None, columnspan=1, **kwargs):
@@ -175,24 +180,39 @@ class App(customtkinter.CTk):
 
         return slider
     
+    def create_table(self, data, header, width, row, column, **kwargs):
+        text_widget = customtkinter.CTkTextbox(self, width = width, padx=10, pady=5)
+        text_widget.pack(fill="both", expand=True)
+        # text_widget.grid(row=row, column=column, **kwargs)
+        text_widget.grid_columnconfigure(0, weight=1)
+        text_widget.grid_rowconfigure(0, weight=1)
+        text_widget.insert("1.0", "\t".join(header) + "\n")
+
+        for row in data:
+            text_widget.insert("end", " \t ".join(map(str, np.round(row,2))) + "\n")
+        return text_widget
+    
 
     def initialize_plot(self):
         if not self.initialize_plot_has_been_called:
             self.initialize_plot_has_been_called = True
             
-        self.fig, self.ax1 = plt.subplots(1,1, figsize=(15,4),constrained_layout=True, dpi=150)
+        self.fig, self.ax1 = plt.subplots(1,1,figsize=(15,4), constrained_layout=True, dpi=150)
         self.ax1.set_prop_cycle(cycler(color=plt.get_cmap(self.cmap).colors))
         if self.uselabels_button.get() == 1:
             self.ax1.set_xlabel(self.ent_xlabel.get())
             self.ax1.set_ylabel(self.ent_ylabel.get())
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self)
-        self.canvas.get_tk_widget().grid(row=11, column=1, columnspan=3,padx=20, pady=(15,0), sticky='ns')
-        self.create_toolbar()
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.tabview.tab("Plot"))
+        self.my_frame = App.create_table(self.tabview.tab("Table"), data=np.loadtxt(os.path.join(self.folder_path.get(), self.optmenu.get())), header=['x','y','dy'], width=400, sticky='nsw', row=0, column=0, pady=(20,10), padx=10)
+        # self.canvas.get_tk_widget().grid(row=11, column=1, columnspan=3,padx=20, pady=(15,0), sticky='ns')
+        # self.canvas.get_tk_widget().grid(row=0, column=0, columnspan=2,padx=20, pady=(15,0), sticky='nsew')
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        # self.create_toolbar()
         self.ymax = 0
         self.plot()
 
     def create_toolbar(self):
-        toolbar_frame = customtkinter.CTkFrame(master=self)
+        toolbar_frame = customtkinter.CTkFrame(master=self.tabview.tab("Plot"))
         toolbar_frame.grid(row=12, column=1, columnspan=3)
         toolbar = NavigationToolbar2Tk(self.canvas, toolbar_frame)
         toolbar.config(background=self.color)
@@ -555,7 +575,6 @@ class Table(customtkinter.CTkScrollableFrame):
 
         self.columns = ("x", "y")
         self.data = data
-        print(data)
 
         self.text_widget = customtkinter.CTkTextbox(self, padx=10, pady=5)
         self.text_widget.grid(row=0, column=0, sticky="nsew")
@@ -564,15 +583,16 @@ class Table(customtkinter.CTkScrollableFrame):
         self.text_widget.insert("1.0", "\t".join(self.columns) + "\n")
 
         for row in self.data:
-            self.insert_data(row)
+            # self.insert_data(row)
+            self.text_widget.insert("end", "\t".join(map(str, row)) + "\n")
 
-    def insert_data(self, values):
-        if len(values) != len(self.columns):
-            raise ValueError(f"Number of values {len(values)} must match the number of columns {len(self.columns)}")
+    # def insert_data(self, values):
+        # if len(values) != len(self.columns):
+        #     raise ValueError(f"Number of values {len(values)} must match the number of columns {len(self.columns)}")
 
-        self.text_widget.insert("end", "\t".join(map(str, values)) + "\n")
+        # self.text_widget.insert("end", "\t".join(map(str, values)) + "\n")
 
-        self.update()
+        # self.update()
         
 if __name__ == "__main__":
     app = App()
