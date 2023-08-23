@@ -7,12 +7,13 @@ Created on Sun Sep 18 14:28:26 2022
 import tkinter
 import os
 import customtkinter
+from CTkTable import *
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 import ctypes
-import io
+# import io
 import pandas as pd
 import matplotlib
 from cycler import cycler
@@ -205,11 +206,14 @@ class App(customtkinter.CTk):
             self.toolbar.destroy()
             for widget_key, widget in self.lists.items():
                 widget.destroy()
+            for widget_key, widget in self.listnames.items():
+                widget.destroy()
             self.plot_counter = 0
             plt.close(self.fig)
             
         
         self.lists = {}
+        self.listnames = {}
         if not self.initialize_plot_has_been_called:
             self.initialize_plot_has_been_called = True
             
@@ -258,7 +262,6 @@ class App(customtkinter.CTk):
         
         if self.uselabels_button.get() == 1: 
             plot_kwargs["label"] = self.ent_legend.get()
-            self.ax1.legend()
             
         if self.uselims_button.get() == 1:
             self.ylim_l.set(np.min(self.data[:, 1]))
@@ -266,18 +269,19 @@ class App(customtkinter.CTk):
             
         # create the plot
         self.ax1.plot(self.data[:, 0], self.data[:, 1], **plot_kwargs)
-        
+        if self.uselabels_button.get() == 1 and self.ent_legend.get() != "": self.ax1.legend()
         # create the list
-        self.lists["self.my_frame{}".format(self.plot_counter)] = App.create_table(self.tabview.tab("Data Table"), data=self.data, width=300, sticky='ns', row=0, column=self.plot_counter, pady=(20,10), padx=10)
+        self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=self.plot_counter, pady=(0,0), padx=10)
+        self.lists["self.my_frame{}".format(self.plot_counter)] = App.create_table(self.tabview.tab("Data Table"), data=self.data, width=300, sticky='ns', row=1, column=self.plot_counter, pady=(20,10), padx=10)
         for widget_key, widget in self.lists.items():
             widget.configure(width=min(300,0.75*self.tabview.winfo_width()/(1.1*self.plot_counter+1)))
         
         # create the fit
         if self.use_fit == 1:
             self.ax1.plot(self.data[:, 0], self.fit_plot(self.function, self.params), **plot_kwargs)
+            self.ax1.text(0.8, 0.85,"test", transform=self.ax1.transAxes, bbox=props)
         self.update_plot()
         self.plot_counter += 1
-        # self.fig.tight_layout()
         
 
     def update_plot(self):
