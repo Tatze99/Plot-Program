@@ -20,7 +20,7 @@ from cycler import cycler
 from scipy.optimize import curve_fit as cf
 from inspect import signature # get number of arguments of a function
 
-version_number = "23/08"
+version_number = "23/10"
 plt.style.use('default')
 matplotlib.rc('font', family='serif')
 matplotlib.rc('font', serif='Times New Roman')
@@ -44,6 +44,43 @@ def linear(x, a, b):
 
 def quadratic(x, a, b, c):
     return np.polyval([a,b,c], x)
+
+def moving_average(x, window_size):
+    """
+    Smooths the given array x using a centered moving average.
+
+    Parameters:
+        x (list or numpy array): The input array to be smoothed.
+        window_size (int): The size of the centered moving average window.
+
+    Returns:
+        smoothed_array (numpy array): The smoothed array.
+    """
+    # Ensure the window_size is even
+    if window_size % 2 == 0:
+        half_window = window_size // 2
+    else:
+        half_window = (window_size - 1) // 2
+
+    if window_size <= 1:
+        return x
+
+    half_window = window_size // 2
+    cumsum = np.cumsum(x)
+
+    # Calculate the sum of elements for each centered window
+    cumsum[window_size:] = cumsum[window_size:] - cumsum[:-window_size]
+    centered_sums = cumsum[window_size - 1:-1]
+
+    # Divide each sum by the window size to get the centered moving average
+    smoothed_array = centered_sums / window_size
+
+    # Pad the beginning and end of the smoothed array with the first and last values of x
+    first_value = np.repeat(x[0], half_window)
+    last_value = np.repeat(x[-1], half_window)
+    smoothed_array = np.concatenate((first_value, smoothed_array, last_value))
+
+    return smoothed_array
 
 class App(customtkinter.CTk):
     def __init__(self):
@@ -79,6 +116,7 @@ class App(customtkinter.CTk):
         self.normalize_type = "maximum"
         self.ax1 = None
         self.plot_counter = 0
+        self.moving_average = 1
         
         
     # user interface, gets called when the program starts 
@@ -116,7 +154,6 @@ class App(customtkinter.CTk):
         self.uselabels_button   = App.create_switch(frame, text="Use labels", command=self.use_labels,  column=0, row=8, width=200, sticky='w', padx=20)
         self.uselims_button     = App.create_switch(frame, text="Use limits", command=self.use_limits,  column=0, row=9, width=200, sticky='w', padx=20)
         self.normalize_button   = App.create_switch(frame, text="Normalize", command=self.normalize_setup,    column=0, row=10, width=200, sticky='w', padx=20)
-        
         
         self.settings_frame = customtkinter.CTkFrame(self, width=1, height=600, corner_radius=0)
         self.settings_frame.grid(row=0, column=4, rowspan=999, sticky="nesw")
@@ -268,7 +305,7 @@ class App(customtkinter.CTk):
             self.ylim_r.set(max(self.ymax,np.max(self.data[:,1])))
             
         # create the plot
-        self.ax1.plot(self.data[:, 0], self.data[:, 1], **plot_kwargs)
+        self.ax1.plot(self.data[:, 0], moving_average(self.data[:, 1], self.moving_average), **plot_kwargs)
         if self.uselabels_button.get() == 1 and self.ent_legend.get() != "": self.ax1.legend()
         # create the list
         self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=self.plot_counter, pady=(0,0), padx=10)
@@ -279,7 +316,7 @@ class App(customtkinter.CTk):
         # create the fit
         if self.use_fit == 1:
             self.ax1.plot(self.data[:, 0], self.fit_plot(self.function, self.params), **plot_kwargs)
-            self.ax1.text(0.8, 0.85,"test", transform=self.ax1.transAxes, bbox=props)
+            self.ax1.text(0.05, 0.9, FitWindow.get_fitted_labels(self.toplevel_window), ha='left', va='top', transform=self.ax1.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'))
         self.update_plot()
         self.plot_counter += 1
         
@@ -477,6 +514,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.markers = {'none':'', 'point':'.', 'circle':'o', 'pixel':',', 'triangle down': 'v', 'triangle up': '^', 'x': 'x', 'diamond': 'D'}
         self.cmap = ['tab10', 'tab20', 'tab20b','tab20c', 'Pastel1', 'Pastel2', 'Paired', 'Accent', 'Dark2',
                       'Set1', 'Set2', 'Set3']
+        self.moving_average = ['1','2','4','6','8','10','16']
         
         # command funktioniert doch, muss noch implementiert werden für set_plot settings
         self.linestyle_list     = App.create_combobox(self, values=list(self.values.keys()), text="line style", 
@@ -485,6 +523,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
                                                       command=self.set_plot_settings,   width=200, column=1, row=2)
         self.cmap_list          = App.create_combobox(self, values=self.cmap,                text="colormap",   
                                                       command=self.set_plot_settings,   width=200, column=1, row=3)
+        self.moving_av_list     = App.create_combobox(self, values=self.moving_average,      text="average",   
+                                                      command=self.set_plot_settings,   width=200, column=1, row=4)
         self.reset_button       = App.create_button(self, text="Reset Settings",command=self.reset_values, width=130, column=3, row=0, pady=(20,5))
         self.linewidth_slider   = App.create_slider(self, init_value=1, from_=0.1, to=2, command=self.update_slider_value, text="line width", width=200, row=1, column=1, number_of_steps=10)
         self.norm_switch_button = App.create_switch(self, text="Normalize 'Area'", command=self.change_normalize_function,  column=3, row=2, width=200)
@@ -497,6 +537,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.linestyle_list.set(list(self.values.keys())[list(self.values.values()).index(self.app.linestyle)])
         self.marker_list.set(list(self.markers.keys())[list(self.markers.values()).index(self.app.markers)])
         self.cmap_list.set(self.app.cmap)
+        self.moving_av_list.set(self.app.moving_average)
         self.linewidth_slider.set(self.app.linewidth)
         self.update_slider_value(self.app.linewidth)
         if self.app.normalize_type == "area": self.light_theme_button.select()
@@ -505,6 +546,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.linestyle_list.set(next(iter(self.values)))
         self.marker_list.set(next(iter(self.markers)))
         self.cmap_list.set(self.cmap[0])
+        self.moving_av_list.set(str(self.moving_average[0]))
         self.linewidth_slider.set(1) # before next line!
         self.update_slider_value(1)
         
@@ -518,6 +560,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app.markers=self.markers[self.marker_list.get()]
         self.app.cmap=self.cmap_list.get()
         self.app.linewidth=self.linewidth_slider.get()
+        self.app.moving_average = int(self.moving_av_list.get())
 
     
     def change_normalize_function(self):
@@ -536,14 +579,17 @@ class FitWindow(customtkinter.CTkToplevel):
         self.fit_switch = App.create_switch(self, text="Fit Function", command=self.set_plot_settings, width=200, row=0, column=1)
         self.function = {'Gaussian': gauss, 'Linear': linear, 'Quadratic': quadratic, 'Exponential': exponential, 'Square Root': sqrt}
         self.function_label = App.create_label(self, text="", column=2, row=0, width=80, columnspan=2, anchor='w', sticky='w')
-        self.function_label_list = {'Gaussian': "f(x) = a * exp(-(x - b)^2 / (2 * c^2)) + d", 
-                                    'Linear': "f(x) = a * x + b", 
-                                    'Quadratic': "f(x) = a * x^2 + b * x + c", 
-                                    'Exponential': "f(x) = a * exp(b * x) + c", 
-                                    'Square Root': "f(x) = a * sqrt(b * x) + c"}
+        self.function_label_list = {'Gaussian': "f(x) = a·exp(-(x-b)²/(2·c²)) + d", 
+                                    'Linear': "f(x) = a·x + b", 
+                                    'Quadratic': "f(x) = a·x² + b·x + c", 
+                                    'Exponential': "f(x) = a·exp(b·x) + c", 
+                                    'Square Root': "f(x) = a·sqrt(b·x) + c"}
         
         self.function_list = App.create_combobox(self, values=list(self.function.keys()), command=self.create_params, text="Fit Function",   width=130, column=1, row=1)
-        
+        self.function_list.set('Gaussian')
+        self.params = []
+        self.error = []
+        self.create_params('Gaussian')
         
     def create_params(self, function_name):
         # set the label of the function, e.g f(x) = a*x+b
@@ -593,9 +639,23 @@ class FitWindow(customtkinter.CTkToplevel):
                 error[-1,-1] = error[2,2] * params[-1]
             
             if i >= self.number_of_args: break   # take only the right number of arguments
-            print(params[i])
-            getattr(self, "str_var_" + name).set(str(round(params[i],2))+" ± "+str(round(np.sqrt(error[i,i]),2)))
+            self.params = params
+            self.error = error
+            
+            round_digit = -int(np.floor(np.log10(abs(np.sqrt(error[i,i])))))
+            getattr(self, "str_var_" + name).set(str(round(params[i],round_digit))+" ± "+str(round(np.sqrt(error[i,i]),round_digit)))
     
+    # display values in the textbox, function is used in app.plot()
+    def get_fitted_labels(self):
+        string = self.function_label_list[self.function_list.get()] 
+        
+        for i,name in enumerate(['a','b','c','d', 'FWHM']):
+            if i >= self.number_of_args: break
+            round_digit = -int(np.floor(np.log10(abs(np.sqrt(self.error[i,i])))))
+            string += "\n" + name +" = " + str(round(self.params[i],round_digit))+" ± "+str(round(np.sqrt(self.error[i,i]),round_digit))
+        return string
+        
+        
     def set_plot_settings(self):
         self.app.params = []
         for i,name in enumerate(['a','b','c','d']):
@@ -604,9 +664,13 @@ class FitWindow(customtkinter.CTkToplevel):
                 value = float(getattr(self, "fit_" + name).get())
                 self.app.params.append(value)
             except ValueError:
-                self.app.params.append(0)
+                self.app.params.append(1)
+                if self.function_name == "Gaussian" and i == 1:
+                    self.app.params[1] = app.data[np.argmax(app.data[:,1]),0]
+                    self.app.params[0] = np.max(app.data[:,1])
 
         self.app.function = self.function[self.function_list.get()]
+        # app.initialize_plot()
         self.app.use_fit = self.fit_switch.get()
 
 class Table(customtkinter.CTkScrollableFrame):
