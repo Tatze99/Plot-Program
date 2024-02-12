@@ -154,13 +154,13 @@ class App(customtkinter.CTk):
 
         self.sidebar_frame = customtkinter.CTkFrame(self, width=200, height=600, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, rowspan=999, sticky="nesw")
-        self.sidebar_frame.rowconfigure(12, weight=1)
+        self.sidebar_frame.rowconfigure(15, weight=1)
         self.rowconfigure(11,weight=1)
 
         App.create_label(self.sidebar_frame, text="GIES v."+version_number, font=customtkinter.CTkFont(size=20, weight="bold"),row=0, column=0, padx=20, pady=(20, 10), sticky=None)
         
         self.tabview = customtkinter.CTkTabview(self, width=250)
-        self.tabview.grid(row=11, column=1, padx=(10, 10), pady=(20, 0), columnspan=2, sticky="nsew")
+        self.tabview.grid(row=3, column=1, padx=(10, 10), pady=(20, 0), columnspan=2, sticky="nsew", rowspan=10)
         self.tabview.add("Show Plots")
         self.tabview.add("Data Table")
         # self.tabview.tab("Show Plots").configure(fg_color="white")
@@ -185,14 +185,15 @@ class App(customtkinter.CTk):
         self.uselims_button   = App.create_switch(frame, text="Use limits", command=self.use_limits,  column=0, row=9, padx=20)
         self.fit_button       = App.create_switch(frame, text="Use fit",    command=lambda: self.open_widget(FitWindow), column=0, row=10, padx=20)
         self.normalize_button = App.create_switch(frame, text="Normalize",  command=self.normalize_setup,    column=0, row=11, padx=20)
+        self.lineout_button = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
         
         self.settings_frame = customtkinter.CTkFrame(self, width=1, height=600, corner_radius=0)
         self.settings_frame.grid(row=0, column=4, rowspan=999, sticky="nesw")
         self.columnconfigure(2,weight=1)
         # self.columnconfigure(1,weight=1)
         
-        self.appearance_mode_label = App.create_label(self.sidebar_frame, text="Appearance Mode:", row=13, column=0, padx=20, pady=(10, 0), sticky="w")
-        self.appearance_mode_optionemenu = App.create_optionMenu(self.sidebar_frame, values=["Dark","Light", "System"], command=self.change_appearance_mode_event, width=200, row=14, column=0, padx=20, pady=(5,10))
+        self.appearance_mode_label = App.create_label(frame, text="Appearance Mode:", row=16, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.appearance_mode_optionemenu = App.create_optionMenu(frame, values=["Dark","Light", "System"], command=self.change_appearance_mode_event, width=200, row=17, column=0, padx=20, pady=(5,10))
         
         #entries
         self.folder_path = self.create_entry(column=2, row=0, text="Folder path", columnspan=2, width=600, padx=10, pady=10, sticky="w")
@@ -216,6 +217,11 @@ class App(customtkinter.CTk):
 
     def create_button(self, text, command, row, column, width=200, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
         button = customtkinter.CTkButton(self, text=text, command=command, width=width, **kwargs)
+        button.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
+        return button
+    
+    def create_segmented_button(self, values, command, row, column, width=200, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
+        button = customtkinter.CTkSegmentedButton(self, values=values, command=command, width=width, **kwargs)
         button.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         return button
 
@@ -356,12 +362,13 @@ class App(customtkinter.CTk):
         self.plot_counter += 1
         
     def make_line_plot(self, file_path):
-        file_decimal = self.open_file(file_path)
-        self.data = np.array(pd.read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True))
+        if file_path != "plot lineout":
+            file_decimal = self.open_file(file_path)
+            self.data = np.array(pd.read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True))
         
         if len(self.data[0, :]) == 1:
             self.data = np.vstack((range(len(self.data)), self.data[:, 0])).T
-
+        
         # create dictionary of the plot key word arguments
         self.plot_kwargs = dict(
             linestyle = self.linestyle,
@@ -570,8 +577,12 @@ class App(customtkinter.CTk):
     def multiplot(self):
         self.replot = not self.replot
         if self.multiplot_button.get() == 1:
-            self.rows = 2
+            if self.lineout_button.get():
+                self.rows = 1
+            else:
+                self.rows = 2
             self.cols = 2
+
             row = 9
             self.multiplot_title = App.create_label( self.settings_frame,column=0, row=row, text="Multiplot Grid", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=4, padx=20, pady=(20, 10),sticky=None)
             self.ent_rows        = App.create_entry( self.settings_frame,column=1, row=row+1, width=60, padx=(5,5))
@@ -598,7 +609,37 @@ class App(customtkinter.CTk):
             self.rows = 1
             self.cols = 1
         self.initialize_plot()
-            
+
+    def lineout(self):
+        if self.lineout_button.get():
+            if self.multiplot_button.get() == 0:
+                self.multiplot_button.toggle()
+            self.rows = 1
+            self.cols = 2
+            row = 12
+            self.lineout_title = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=4, padx=20, pady=(20, 10),sticky=None)
+            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 2, row=row+1, values=["x-line", "y-line"], command=self.plot_lineout, columnspan=2)
+            self.choose_ax_button.configure(unselected_color=["#3a7ebf", "#1f538d"], fg_color=["#325882", "#14375e"])
+            self.ent_line        = App.create_entry( self.settings_frame,column=1, row=row+1, width=60, padx=(5,5))
+            self.ent_line_text   = App.create_label( self.settings_frame,column=0, row=row+1, text="line")
+            self.ent_line.insert(0,str(int(len(self.data[:,0])/2)))
+
+    def plot_lineout(self, val):
+        self.initialize_plot()
+        asp_image = len(self.data[:,0]) / len(self.data[0,:])
+        if self.choose_ax_button.get() == "x-line":
+            self.data = np.array([self.data[int(self.ent_line.get()),:]]).T
+            self.ax1.axhline(int(self.ent_line.get()))
+        elif self.choose_ax_button.get() == "y-line":
+            self.data = np.array([self.data[:,int(self.ent_line.get())]]).T
+            self.ax1.axvline(int(self.ent_line.get()))
+        
+        self.ax1 = self.fig.add_subplot(1,2,2)
+        self.make_line_plot("plot lineout")
+        asp = np.diff(self.ax1.get_xlim())[0] / np.diff(self.ax1.get_ylim())[0]*asp_image
+        self.ax1.set_aspect(asp)
+        self.choose_ax_button.set(None)
+        self.canvas.draw()
         
     def update_limits(self):
         self.xlim_l.configure(from_=np.floor(np.min(self.data[:, 0])), to=np.ceil(np.max(self.data[:, 0])))
@@ -855,7 +896,7 @@ class FitWindow(customtkinter.CTkFrame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.app = app
-        self.row = 13
+        self.row = 15
         self.widget_dict = {}
         self.labels_title = App.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row, column=0, columnspan=4, padx=20, pady=(20, 10),sticky=None)
         self.function = {'Gaussian': gauss, 'Linear': linear, 'Quadratic': quadratic, 'Exponential': exponential, 'Square Root': sqrt}
