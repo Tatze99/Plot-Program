@@ -362,9 +362,11 @@ class App(customtkinter.CTk):
         self.plot_counter += 1
         
     def make_line_plot(self, file_path):
-        if file_path != "plot lineout":
-            file_decimal = self.open_file(file_path)
-            self.data = np.array(pd.read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True))
+        file_decimal = self.open_file(file_path)
+        try:
+            self.data = np.array(pd.read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
+        except: 
+            self.data = np.loadtxt(file_path)
         
         if len(self.data[0, :]) == 1:
             self.data = np.vstack((range(len(self.data)), self.data[:, 0])).T
@@ -376,6 +378,7 @@ class App(customtkinter.CTk):
             linewidth = self.linewidth,
             )
         
+        print(self.data)
         if self.uselabels_button.get() == 1: 
             self.plot_kwargs["label"] = self.ent_legend.get()
 
@@ -398,7 +401,7 @@ class App(customtkinter.CTk):
 
         # create the fit
         if self.use_fit == 1:
-            self.ax1.plot(self.data[:, 0], self.fit_plot(self.function, self.params), **self.plot_kwargs)
+            self.ax1.plot(self.data[:, 0], self.fit_plot(self.function, self.params, self.data), **self.plot_kwargs)
             if self.display_fit_params_in_plot.get():
                 self.ax1.text(0.05, 0.9, FitWindow.get_fitted_labels(self.settings_window), ha='left', va='top', transform=self.ax1.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'))
 
@@ -487,11 +490,11 @@ class App(customtkinter.CTk):
             if replot: self.plot()
             self.reset_plots = True
 
-    def fit_plot(self, function, initial_params):
-        params,K=cf(function,self.data[:, 0],self.data[:, 1], p0=initial_params)
+    def fit_plot(self, function, initial_params, data):
+        params,K=cf(function,data[:, 0],data[:, 1], p0=initial_params)
         # write fit parameters in an array to access
         FitWindow.set_fitted_values(self.settings_window, params, K)
-        return function(self.data[:,0], *params)
+        return function(data[:,0], *params)
         
     def read_file_list(self):
         path = customtkinter.filedialog.askdirectory(initialdir=Standard_path)
@@ -589,7 +592,7 @@ class App(customtkinter.CTk):
             self.ent_rows_text   = App.create_label( self.settings_frame,column=0, row=row+1, text="rows")
             self.ent_cols        = App.create_entry( self.settings_frame,column=1, row=row+2, width=60, padx=(5,5))
             self.ent_cols_text   = App.create_label( self.settings_frame,column=0, row=row+2, text="cols")
-            self.switch_ticks    = App.create_switch(self.settings_frame,column=2, row=row+1, text="hide ticks", command = lambda: self.toggle_boolean(self.hide_ticks), padx=(5,20), columnspan=2, sticky="w")
+            self.switch_ticks    = App.create_switch(self.settings_frame,column=2, row=row+1, text="hide ticks",  command = lambda: self.toggle_boolean(self.hide_ticks), padx=(5,20), columnspan=2, sticky="w")
             self.switch_multiplt = App.create_switch(self.settings_frame,column=2, row=row+2, text="1 multiplot", command = lambda: self.toggle_boolean(self.one_multiplot), padx=(5,20), columnspan=2, sticky="w")
             self.settings_frame.grid()
             self.addplot_button.grid() 
@@ -615,31 +618,89 @@ class App(customtkinter.CTk):
             if self.multiplot_button.get() == 0:
                 self.multiplot_button.toggle()
             self.rows = 1
+            self.lineout_xy = "x-line"
+            # self.lineout_data = []
             self.cols = 2
             row = 12
-            self.lineout_title = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=4, padx=20, pady=(20, 10),sticky=None)
-            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 2, row=row+1, values=["x-line", "y-line"], command=self.plot_lineout, columnspan=2)
-            self.choose_ax_button.configure(unselected_color=["#3a7ebf", "#1f538d"], fg_color=["#325882", "#14375e"])
-            self.ent_line        = App.create_entry( self.settings_frame,column=1, row=row+1, width=60, padx=(5,5))
-            self.ent_line_text   = App.create_label( self.settings_frame,column=0, row=row+1, text="line")
-            self.ent_line.insert(0,str(int(len(self.data[:,0])/2)))
+            self.lineout_title    = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=4, padx=20, pady=(20, 10),sticky=None)
+            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+2, values=["x-line", "y-line"], command=self.initialize_lineout, columnspan=1)
+            self.line_entry       = App.create_entry(self.settings_frame, row=row+1, column=3, width=60)
+            self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=max(len(self.data[:,0]), len(self.data[0,:])), command= lambda val=None: self.plot_lineout(val), row=row+1, column =1, width=130, padx=(5,5), columnspan=2)
+            self.ent_line_text    = App.create_label( self.settings_frame,column=0, row=row+1, text="line")
+            self.save_lineout_button = App.create_button(self.settings_frame, column = 2, row=row+2, text="Save Lineout", command= lambda: self.save_data_file(self.lineout_data), width=100, columnspan=2)
+            self.line_entry.insert(0,str(int(len(self.data[:,0])/2)))
+            self.line_entry.bind("<KeyRelease>", lambda event, val=self.line_entry, slider_widget=self.line_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
+            self.choose_ax_button.set("x-line")
+            self.initialize_lineout("x-line")
+        else:
+            for name in ["lineout_title", "line_entry", "line_slider", "ent_line_text", "choose_ax_button"]:
+                getattr(self, name).grid_remove()
+            self.close_settings_window()
 
-    def plot_lineout(self, val):
+    def initialize_lineout(self,val):
         self.initialize_plot()
         asp_image = len(self.data[:,0]) / len(self.data[0,:])
         if self.choose_ax_button.get() == "x-line":
-            self.data = np.array([self.data[int(self.ent_line.get()),:]]).T
-            self.ax1.axhline(int(self.ent_line.get()))
+            self.lineout_data = np.array([self.data[int(self.line_slider.get()),:]]).T
+            self.axline = self.ax1.axhline(int(self.line_slider.get()))
+            self.line_slider.configure(from_=0, to=len(self.data[:,0])-1)
+            self.lineout_xy = "x-line"
         elif self.choose_ax_button.get() == "y-line":
-            self.data = np.array([self.data[:,int(self.ent_line.get())]]).T
-            self.ax1.axvline(int(self.ent_line.get()))
+            self.lineout_data = np.array([self.data[:,int(self.line_slider.get())]]).T
+            self.axline = self.ax1.axvline(int(self.line_slider.get()))
+            self.line_slider.configure(from_=0, to=len(self.data[0,:])-1)
+            self.lineout_xy = "y-line"
         
-        self.ax1 = self.fig.add_subplot(1,2,2)
-        self.make_line_plot("plot lineout")
-        asp = np.diff(self.ax1.get_xlim())[0] / np.diff(self.ax1.get_ylim())[0]*asp_image
-        self.ax1.set_aspect(asp)
-        self.choose_ax_button.set(None)
+        max_value = np.max(self.data)
+        self.ax2 = self.fig.add_subplot(1,2,2)
+
+        self.plot_kwargs = dict(
+            linestyle = self.linestyle,
+            marker = self.markers,
+            linewidth = self.linewidth,
+            )
+        
+        scale = 1
+        if self.convert_pixels.get():
+            scale = self.pixel_size
+
+        self.lineout_data = np.vstack((np.arange(0,len(self.lineout_data)*scale,scale), self.lineout_data[:, 0])).T
+        self.lineout_plot, = self.ax2.plot(self.lineout_data[:,0],self.lineout_data[:,1], **self.plot_kwargs)
+        # asp = np.diff(self.ax2.get_xlim())[0] / np.diff(self.ax2.get_ylim())[0]*asp_image
+        asp = np.diff(self.ax2.get_xlim())[0] / max_value*asp_image
+
+        if self.uselabels_button.get() == 1:
+            self.ax2.set_xlabel(self.ent_xlabel.get())
+        self.ax2.set_aspect(asp)
+        self.ax2.set_ylim(0, max_value)
+
+        if self.use_fit == 1:
+            print(self.params)
+            self.ax2.plot(self.lineout_data[:, 0], self.fit_plot(self.function, self.params, self.lineout_data), **self.plot_kwargs)
         self.canvas.draw()
+        self.choose_ax_button.set(None)
+
+    def plot_lineout(self, val):
+        self.line_entry.delete(0, 'end')
+        self.line_entry.insert(0,str(int(self.line_slider.get())))
+        
+        if self.lineout_xy == "x-line":
+            self.lineout_data[:,1] = np.array([self.data[int(self.line_slider.get()),:]])
+            self.axline.set_ydata(int(self.line_slider.get()))
+        elif self.lineout_xy == "y-line":
+            self.lineout_data[:,1] = np.array([self.data[:,int(self.line_slider.get())]])
+            self.axline.set_xdata(int(self.line_slider.get()))
+        
+        self.lineout_plot.set_ydata(self.lineout_data[:,1])
+
+            # if self.display_fit_params_in_plot.get():
+            #     self.ax2.text(0.05, 0.9, FitWindow.get_fitted_labels(self.settings_window), ha='left', va='top', transform=self.ax1.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'))
+        self.canvas.draw()
+
+    def save_data_file(self, data):
+        print(data[:,0], data[:,1])
+        file_name = customtkinter.filedialog.asksaveasfilename()
+        np.savetxt(file_name, data, fmt="%.4e")
         
     def update_limits(self):
         self.xlim_l.configure(from_=np.floor(np.min(self.data[:, 0])), to=np.ceil(np.max(self.data[:, 0])))
@@ -989,8 +1050,12 @@ class FitWindow(customtkinter.CTkFrame):
             except ValueError:
                 self.app.params.append(1)
                 if self.function_name == "Gaussian" and i == 1:
-                    self.app.params[1] = app.data[np.argmax(app.data[:,1]),0]
-                    self.app.params[0] = np.max(app.data[:,1])
+                    if app.lineout_button.get():
+                        self.app.params[1] = app.lineout_data[np.argmax(app.lineout_data[:,1]),0]
+                        self.app.params[0] = np.max(app.data[:,1])
+                    else:
+                        self.app.params[1] = app.lineout_data[np.argmax(app.lineout_data[:,1]),0]
+                        self.app.params[0] = np.max(app.lineout_data[:,1])
 
         self.app.function = self.function[self.function_list.get()]
         # app.initialize_plot()
