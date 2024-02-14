@@ -173,7 +173,7 @@ class App(customtkinter.CTk):
         #buttons
         frame = self.sidebar_frame
         
-        self.plot_button    = App.create_button(frame, text="Reset graph",             command=self.initialize_plot, column=0, row=5, pady=(15,5))
+        self.plot_button    = App.create_button(frame, text="Reset graph",             command=self.initialize, column=0, row=5, pady=(15,5))
         self.reset_button   = App.create_button(frame, text="Reset",                  command=self.initialize_plot, column=0, row=5, width=90, padx = (10,120), pady=(15,5))   # Multiplot button
         self.addplot_button = App.create_button(frame, text="Multiplot",              command=self.plot,            column=0, row=5, width=90, padx = (120,10), pady=(15,5))   # Multiplot button
         self.load_button    = App.create_button(frame, text="\U0001F4C1 Load Folder", command=self.read_file_list,  column=0, row=1)
@@ -190,6 +190,9 @@ class App(customtkinter.CTk):
         self.normalize_button = App.create_switch(frame, text="Normalize",  command=self.normalize_setup,    column=0, row=11, padx=20)
         self.lineout_button = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
         
+        for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button"]:
+                getattr(self, name).configure(state="disabled")
+
         self.settings_frame = customtkinter.CTkFrame(self, width=1, height=600, corner_radius=0)
         self.settings_frame.grid(row=0, column=4, rowspan=999, sticky="nesw")
         self.columnconfigure(2,weight=1)
@@ -274,6 +277,13 @@ class App(customtkinter.CTk):
     #################################################
     ###############Do the plots######################
     #################################################
+
+    def initialize(self):
+        if self.lineout_button.get():
+            self.initialize_lineout(self.lineout_xy)
+        else:
+            self.initialize_plot()
+
     def initialize_plot(self):
         
         # Clear the previous plot content
@@ -293,11 +303,12 @@ class App(customtkinter.CTk):
         self.listnames = {}
         if not self.initialize_plot_has_been_called:
             self.initialize_plot_has_been_called = True
+            for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button"]:
+                getattr(self, name).configure(state="enabled")
             
-        if self.replot:
+        if self.replot and not self.lineout_button.get():
             self.rows=float(self.ent_rows.get())
             self.cols=float(self.ent_cols.get())
-             
 
         self.fig = plt.figure(figsize=(6,4.5),constrained_layout=True, dpi=150)    
         # self.ax1.tick_params(direction="in", color="gray")
@@ -317,8 +328,6 @@ class App(customtkinter.CTk):
             self.use_limits()
         
     def plot(self):
-        if not self.initialize_plot_has_been_called:
-            self.initialize_plot()
         file_path = os.path.join(self.folder_path.get(), self.optmenu.get())
 
         # Decide if there is an image to process or a data file
@@ -335,7 +344,7 @@ class App(customtkinter.CTk):
                 self.switch_multiplt.configure(state="enabled")
             except: pass
 
-        # multiplots but in several axes 
+        # multiplots but in several subplots
         if self.replot and not self.one_multiplot.get():
             if self.plot_counter > self.rows*self.cols: return
             self.ax1 = self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter)
@@ -412,7 +421,6 @@ class App(customtkinter.CTk):
         # create the fit
         if self.use_fit == 1:
             FitWindow.set_fit_params(self.settings_window)
-            print(self.params)
             self.ax1.plot(self.data[:, 0], self.fit_plot(self.function, self.params, self.data), **self.plot_kwargs)
             if self.display_fit_params_in_plot.get():
                 self.ax1.text(0.05, 0.9, FitWindow.get_fitted_labels(self.settings_window), ha='left', va='top', transform=self.ax1.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'), size=8)
@@ -427,69 +435,71 @@ class App(customtkinter.CTk):
             aspect = self.aspect
             )
 
-        if self.uselims_button.get() == 1:
-            self.ylim_l.set(0)
-            self.ylim_r.set(len(self.data[:,0]))
+        # if self.uselims_button.get() == 1:
+        #     self.ylim_l.set(0)
+        #     self.ylim_r.set(len(self.data[:,0]))
 
         if self.convert_pixels.get() == True:
             self.ax1.set(xticks=np.arange(0,len(self.data[0,:]), self.label_dist/self.pixel_size), xticklabels=np.arange(0,len(self.data[0,:])*self.pixel_size, self.label_dist))
             self.ax1.set(yticks=np.arange(0,len(self.data[:,0]), self.label_dist/self.pixel_size), yticklabels=np.arange(0,len(self.data[:,0])*self.pixel_size, self.label_dist))
 
+        # normalize the image brightness
         if self.normalize_button.get() == 1: self.normalize()
         ######### create the plot
         plot = self.ax1.imshow(self.data, **self.plot_kwargs)
         #########
+        # use axis labels and add a legend
         if self.uselabels_button.get() == 1 and self.ent_legend.get() != "": 
             self.ax1.text(0.95, 0.95, self.ent_legend.get(), ha='right', va='top', transform=self.ax1.transAxes, bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'))
 
+        # use a scalebar on the bottom right corner
         if self.use_scalebar.get():
             scalebar = ScaleBar(self.pixel_size*1e-3, box_color="black", pad=0.4, box_alpha=.4, color="white", location="lower right", length_fraction=0.3, sep=2) # 1 pixel = 0.2 meter
             self.fig.gca().add_artist(scalebar)
         
+        # use a colorbar
         if self.use_colorbar.get():
             self.cbar = self.fig.colorbar(plot, fraction=0.045, pad=0.01)
         
 
     def update_plot(self, val):
-        if self.uselims_button.get() == 0: 
-            self.canvas.draw()
-            return
+        if self.uselims_button.get() == 1: 
 
-        self.x_l = self.xlim_l.get()
-        self.x_r = self.xlim_r.get()
-        self.y_l = self.ylim_l.get()
-        self.y_r = self.ylim_r.get()
+            self.x_l = self.xlim_l.get()
+            self.x_r = self.xlim_r.get()
+            self.y_l = self.ylim_l.get()
+            self.y_r = self.ylim_r.get()
 
-        if isinstance(val, (float, str, set, dict)):
-            self.xlim_lbox.delete(0, 'end')
-            self.xlim_lbox.insert(0,str(self.x_l))
-            self.xlim_rbox.delete(0, 'end')
-            self.xlim_rbox.insert(0,str(self.x_r))
-            self.ylim_lbox.delete(0, 'end')
-            self.ylim_lbox.insert(0,str(self.y_l))
-            self.ylim_rbox.delete(0, 'end')
-            self.ylim_rbox.insert(0,str(self.y_r))
+            if isinstance(val, (float, str, set, dict)):
+                self.xlim_lbox.delete(0, 'end')
+                self.xlim_lbox.insert(0,str(self.x_l))
+                self.xlim_rbox.delete(0, 'end')
+                self.xlim_rbox.insert(0,str(self.x_r))
+                self.ylim_lbox.delete(0, 'end')
+                self.ylim_lbox.insert(0,str(self.y_l))
+                self.ylim_rbox.delete(0, 'end')
+                self.ylim_rbox.insert(0,str(self.y_r))
 
-        if self.image_plot: # display images
-            self.ax1.set_xlim(left=float(self.x_l), right=float(self.x_r))
-            self.ax1.set_ylim(bottom=float(self.y_l), top=float(self.y_r))
+            if self.image_plot: # display images
+                self.ax1.set_xlim(left=float(self.x_l), right=float(self.x_r))
+                self.ax1.set_ylim(bottom=float(self.y_l), top=float(self.y_r))
 
-        else: # line plot
-            self.ymax = max(self.ymax,np.max(self.data[:,1]))
-            if self.normalize_button.get() == 1: self.normalize()
-            self.update_limits()
+            else: # line plot
+                self.ymax = max(self.ymax,np.max(self.data[:,1]))
+                if self.normalize_button.get() == 1: self.normalize()
+                self.update_limits()
 
-            self.ax1.set_xlim(left=float(  self.x_l - 0.05 * (self.x_r - self.x_l)), right=float(self.x_r + 0.05 * (self.x_r - self.x_l)))
-            self.ax1.set_ylim(bottom=float(self.y_l - 0.05 * (self.y_r - self.y_l)), top=float(  self.y_r + 0.05 * (self.y_r - self.y_l)))
-            
-            if (self.plot_type == "semilogx" or self.plot_type == "loglog"):
-                xlim_l = calc_log_value(self.x_l - 0.05 * (self.x_r - self.x_l), np.min(abs(self.data[:,0])), np.max(self.data[:,0]))
-                xlim_r = calc_log_value(self.x_r + 0.05 * (self.x_r - self.x_l), np.min(abs(self.data[:,0])), np.max(self.data[:,0]))
-                self.ax1.set_xlim(left=float(xlim_l), right=float(xlim_r))
-            if (self.plot_type == "semilogy" or self.plot_type == "loglog"):
-                ylim_l = calc_log_value(self.y_l - 0.05 * (self.y_r - self.y_l), np.min(abs(self.data[:,1])), np.max(self.data[:,1]))
-                ylim_r = calc_log_value(self.y_r + 0.05 * (self.y_r - self.y_l), np.min(abs(self.data[:,1])), np.max(self.data[:,1]))
-                self.ax1.set_ylim(bottom=float(ylim_l), top=float(ylim_r))
+                self.ax1.set_xlim(left=float(  self.x_l - 0.05 * (self.x_r - self.x_l)), right=float(self.x_r + 0.05 * (self.x_r - self.x_l)))
+                self.ax1.set_ylim(bottom=float(self.y_l - 0.05 * (self.y_r - self.y_l)), top=float(  self.y_r + 0.05 * (self.y_r - self.y_l)))
+                
+                if (self.plot_type == "semilogx" or self.plot_type == "loglog"):
+                    xlim_l = calc_log_value(self.x_l - 0.05 * (self.x_r - self.x_l), np.min(abs(self.data[:,0])), np.max(self.data[:,0]))
+                    xlim_r = calc_log_value(self.x_r + 0.05 * (self.x_r - self.x_l), np.min(abs(self.data[:,0])), np.max(self.data[:,0]))
+                    self.ax1.set_xlim(left=float(xlim_l), right=float(xlim_r))
+                if (self.plot_type == "semilogy" or self.plot_type == "loglog"):
+                    ylim_l = calc_log_value(self.y_l - 0.05 * (self.y_r - self.y_l), np.min(abs(self.data[:,1])), np.max(self.data[:,1]))
+                    ylim_r = calc_log_value(self.y_r + 0.05 * (self.y_r - self.y_l), np.min(abs(self.data[:,1])), np.max(self.data[:,1]))
+                    self.ax1.set_ylim(bottom=float(ylim_l), top=float(ylim_r))
 
         self.canvas.draw()
 
@@ -498,8 +508,10 @@ class App(customtkinter.CTk):
         if 0 <= index < len(filelist):
             self.optmenu.set(filelist[index])
             self.reset_plots = False
-            if not replot: self.initialize_plot()
-            if replot: self.plot()
+            if replot and not self.lineout_button.get(): 
+                self.plot()
+            else:
+                self.initialize()
             self.reset_plots = True
 
     def fit_plot(self, function, initial_params, data):
@@ -516,6 +528,12 @@ class App(customtkinter.CTk):
         filelist = [fname for fname in os.listdir(self.folder_path.get()) if fname.endswith(('.csv', '.dat', '.txt', '.png', '.jpg'))]
         self.optmenu.configure(values=filelist)
         self.optmenu.set(filelist[0])
+
+    """
+    ############################################################################################
+    ##############################    Settings Frame     #######################################
+    ############################################################################################
+    """
 
     def use_limits(self):
         if not self.initialize_plot_has_been_called: return
@@ -630,12 +648,17 @@ class App(customtkinter.CTk):
             self.lineout_button.deselect()
 
         if self.lineout_button.get():
-            if self.multiplot_button.get() == 0:
+            if self.multiplot_button.get():
                 self.multiplot_button.toggle()
-            self.rows = 1
-            self.lineout_xy = "x-line"
-            # self.lineout_data = []
+            self.replot = True
+            self.multiplot_button.configure(state="disabled")
+            
+
             self.cols = 2
+            self.rows = 1
+            self.lineout_xy = " x-line "
+            # self.lineout_data = []
+            self.settings_frame.grid()
             row = 12
             self.lineout_title    = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=4, padx=20, pady=(20, 10),sticky=None)
             self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+2, values=[" x-line ", " y-line "], command=self.initialize_lineout, columnspan=1)
@@ -654,6 +677,8 @@ class App(customtkinter.CTk):
                     getattr(self, name).grid_remove()
             except:
                 return
+            self.multiplot_button.configure(state="enabled")
+            self.replot = False
             self.close_settings_window()
 
     def initialize_lineout(self,val):
@@ -672,15 +697,22 @@ class App(customtkinter.CTk):
         asp_image = len(self.data[self.y_lineout_min:self.y_lineout_max,0]) / len(self.data[0,self.x_lineout_min:self.x_lineout_max])
 
         if val == " x-line ":
+            if self.line_slider.get() >= self.y_lineout_max: self.line_slider.set(self.y_lineout_max-1)
             self.lineout_data = np.array([self.data[int(self.line_slider.get()),self.x_lineout_min:self.x_lineout_max]]).T
             self.axline = self.ax1.axhline([int(self.line_slider.get())])
             self.line_slider.configure(from_=self.y_lineout_min, to=self.y_lineout_max-1)
-            self.lineout_xy = "x-line"
+            self.lineout_xy = " x-line "
         elif val == " y-line ":
+            if self.line_slider.get() >= self.x_lineout_max: self.line_slider.set(self.x_lineout_max-1)
             self.lineout_data = np.array([self.data[self.y_lineout_min:self.y_lineout_max,int(self.line_slider.get())]]).T
             self.axline = self.ax1.axvline([int(self.line_slider.get())])
             self.line_slider.configure(from_=self.x_lineout_min, to=self.x_lineout_max-1)
-            self.lineout_xy = "y-line"
+            self.lineout_xy = " y-line "
+        
+        # reset slider value when the lineout is changed and the value is out of bounds
+        self.line_slider.set(self.line_slider.get())
+        self.line_entry.delete(0, 'end')
+        self.line_entry.insert(0,str(int(self.line_slider.get())))
         
         max_value = np.max(self.data)
         self.ax2 = self.fig.add_subplot(1,2,2)
@@ -714,10 +746,10 @@ class App(customtkinter.CTk):
         self.line_entry.delete(0, 'end')
         self.line_entry.insert(0,str(int(self.line_slider.get())))
         
-        if self.lineout_xy == "x-line":
+        if self.lineout_xy == " x-line ":
             self.lineout_data[:,1] = np.array([self.data[int(self.line_slider.get()),self.x_lineout_min:self.x_lineout_max]])
             self.axline.set_ydata([int(self.line_slider.get())])
-        elif self.lineout_xy == "y-line":
+        elif self.lineout_xy == " y-line ":
             self.lineout_data[:,1] = np.array([self.data[self.y_lineout_min:self.y_lineout_max,int(self.line_slider.get())]])
             self.axline.set_xdata([int(self.line_slider.get())])
         
@@ -741,12 +773,12 @@ class App(customtkinter.CTk):
         
     def normalize_setup(self):
         if self.normalize_button.get() == 1:
-            self.initialize_plot()
             if self.uselims_button.get() == 1:
                 self.update_limits()
                 self.ylim_l.set(np.min(self.data[:, 1]))
                 self.ylim_r.set(np.max(self.data[:, 1]))
-        self.initialize_plot()
+        self.initialize()
+        
     
     def normalize(self):
         if self.image_plot:
@@ -820,7 +852,7 @@ class App(customtkinter.CTk):
         self.initialize_plot()
 
     def close_settings_window(self):
-        if (self.uselabels_button.get() == 0 and self.uselims_button.get() == 0 and self.fit_button.get() == 0 and self.multiplot_button.get() == 0):
+        if not (self.uselabels_button.get() or self.uselims_button.get() or self.fit_button.get() or self.multiplot_button.get() or self.lineout_button.get()):
             self.settings_frame.grid_remove()
             
     def open_toplevel(self,cls):
