@@ -6,6 +6,7 @@ Created on Sun Sep 18 14:28:26 2022
 """
 # import tkinter
 import os
+from CTkRangeSlider import *
 import customtkinter
 from CTkTable import *
 import numpy as np
@@ -142,6 +143,7 @@ class App(customtkinter.CTk):
 
         # Boolean variables
         self.image_plot = True
+        self.image_plot_prev = True
         self.save_plain_image = customtkinter.BooleanVar(value=False)
         self.display_fit_params_in_plot = customtkinter.BooleanVar(value=True)
         self.use_scalebar = customtkinter.BooleanVar(value=False)
@@ -262,6 +264,17 @@ class App(customtkinter.CTk):
 
         return slider
     
+    def create_range_slider(self, from_, to, row, column, width=200, text=None, init_value=None, command=None, columnspan=1, number_of_steps=1000, padx = 10, pady=5, sticky='w',**kwargs):
+        slider = CTkRangeSlider(self, from_=from_, to=to, width=width, command=command, number_of_steps=number_of_steps)
+        slider.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
+        if text is not None:
+            App.create_label(self, text=text, column=column-1, row=row, width=80, anchor='e')
+
+        if init_value is not None:
+            slider.set(init_value)
+
+        return slider
+    
     def create_table(self, data,  width, row, column,header=None, sticky=None, **kwargs):
         text_widget = customtkinter.CTkTextbox(self, width = width, padx=10, pady=5)
         # text_widget.pack(fill="y", expand=True)
@@ -319,18 +332,21 @@ class App(customtkinter.CTk):
         self.toolbar = self.create_toolbar()
         self.ymax = 0
         self.plot()
-        if (self.uselims_button.get() == 1 and self.reset_plots and self.lineout_button.get() == 0): 
-            # make sure the buttons are removed from the grid, before everything is selected again
-            # could be refactored in a different function that just reinitializes the slider values, instead of recreating them!!
-            self.uselims_button.deselect()
-            self.use_limits()
-            self.uselims_button.select()
-            self.use_limits()
+        if ((self.uselims_button.get() and self.reset_plots and not self.lineout_button.get()) or (self.uselims_button.get() and self.image_plot != self.image_plot_prev)): 
+            # make sure the sliders are
+            self.update_limits()
+            xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
+
+            for i, (lim_val, lim_slider) in enumerate(zip(["xlim_min", "xlim_max", "ylim_min", "ylim_max"],["xlim_l", "xlim_r", "ylim_l", "ylim_r"])): # lim_slider - slider 
+                slider_widget = getattr(self,lim_slider)
+                slider_widget.set(locals()[lim_val])
+            self.update_plot("Update Limits")
         
     def plot(self):
         file_path = os.path.join(self.folder_path.get(), self.optmenu.get())
 
         # Decide if there is an image to process or a data file
+        self.image_plot_prev = self.image_plot
         if (".png" in file_path or ".jpg" in file_path):
             self.image_plot = True 
             self.one_multiplot.set(False)
@@ -464,13 +480,16 @@ class App(customtkinter.CTk):
 
     def update_plot(self, val):
         if self.uselims_button.get() == 1: 
-
-            self.x_l = self.xlim_l.get()
-            self.x_r = self.xlim_r.get()
+            
+            print(val)
+            # self.x_l = self.xlim_l.get()
+            # self.x_r = self.xlim_r.get()
+            self.x_l, self.x_r = self.test.get()
             self.y_l = self.ylim_l.get()
             self.y_r = self.ylim_r.get()
 
-            if isinstance(val, (float, str, set, dict)):
+            if isinstance(val, (tuple, float, str, set, dict)):
+                print("is instance")
                 self.xlim_lbox.delete(0, 'end')
                 self.xlim_lbox.insert(0,str(self.x_l))
                 self.xlim_rbox.delete(0, 'end')
@@ -544,18 +563,7 @@ class App(customtkinter.CTk):
             self.labx = App.create_label(self.settings_frame, text="x limits", column=0, row=row+1)
             self.laby = App.create_label(self.settings_frame, text="y limits", column=0, row=row+3)
 
-            # Slider
-            if self.image_plot:
-                xlim_min = 0
-                ylim_min = 0
-                xlim_max = len(self.data[0,:])
-                ylim_max = len(self.data[:,0])
-            
-            else: # normal line plots
-                xlim_min = np.min(self.data[:,0])
-                ylim_min = np.min(self.data[:,1])
-                xlim_max = np.max(self.data[:,0])
-                ylim_max = np.max(self.data[:,1])
+            xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
 
             for i, (lim_box, lim_val, lim_slider) in enumerate(zip(["xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"], # lim_box - entries
                                                                    ["xlim_min", "xlim_max", "ylim_min", "ylim_max"],
@@ -584,12 +592,28 @@ class App(customtkinter.CTk):
                 entry_widget.insert(0,str(round(value,4-len(str(int(value))))))
                 # set the value of the sliders to min and max values respectively
                 slider_widget.set(value)
-
+            self.test = App.create_range_slider(self.settings_frame, from_=xlim_min, to=xlim_max, command= lambda val=None: self.update_plot(val), row=row+5, column =1, width=130, padx=(5,5), columnspan=2)
         else:
             for name in ["xlim_l","xlim_r","ylim_l","ylim_r","labx","laby","limits_title", "xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"]:
                 getattr(self, name).grid_remove()
             self.close_settings_window()
         self.update_plot(None)
+
+    def reset_limits(self):
+                # Slider
+        if self.image_plot:
+            xlim_min = 0
+            ylim_min = 0
+            xlim_max = len(self.data[0,:])
+            ylim_max = len(self.data[:,0])
+        
+        else: # normal line plots
+            xlim_min = np.min(self.data[:,0])
+            ylim_min = np.min(self.data[:,1])
+            xlim_max = np.max(self.data[:,0])
+            ylim_max = np.max(self.data[:,1])
+        
+        return xlim_min, xlim_max, ylim_min, ylim_max
         
     def use_labels(self):
         if self.uselabels_button.get() == 1:
@@ -765,10 +789,16 @@ class App(customtkinter.CTk):
         np.savetxt(file_name, data, fmt="%.4e")
         
     def update_limits(self):
-        self.xlim_l.configure(from_=np.floor(np.min(self.data[:, 0])), to=np.ceil(np.max(self.data[:, 0])))
-        self.xlim_r.configure(from_=np.floor(np.min(self.data[:, 0])), to=np.ceil(np.max(self.data[:, 0])))
-        self.ylim_l.configure(from_=np.min(self.data[:, 1]), to=self.ymax)
-        self.ylim_r.configure(from_=np.min(self.data[:, 1]), to=self.ymax)
+        if self.image_plot:
+            self.xlim_l.configure(from_=0, to=len(self.data[0,:]))
+            self.xlim_r.configure(from_=0, to=len(self.data[0,:]))
+            self.ylim_l.configure(from_=0, to=len(self.data[:,0]))
+            self.ylim_r.configure(from_=0, to=len(self.data[:,0]))
+        else:    
+            self.xlim_l.configure(from_=np.floor(np.min(self.data[:, 0])), to=np.ceil(np.max(self.data[:, 0])))
+            self.xlim_r.configure(from_=np.floor(np.min(self.data[:, 0])), to=np.ceil(np.max(self.data[:, 0])))
+            self.ylim_l.configure(from_=np.min(self.data[:, 1]), to=self.ymax)
+            self.ylim_r.configure(from_=np.min(self.data[:, 1]), to=self.ymax)
 
         
     def normalize_setup(self):
