@@ -337,9 +337,9 @@ class App(customtkinter.CTk):
             self.update_limits()
             xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
 
-            for i, (lim_val, lim_slider) in enumerate(zip(["xlim_min", "xlim_max", "ylim_min", "ylim_max"],["xlim_l", "xlim_r", "ylim_l", "ylim_r"])): # lim_slider - slider 
-                slider_widget = getattr(self,lim_slider)
-                slider_widget.set(locals()[lim_val])
+            self.xlim_slider.set([xlim_min, xlim_max])
+            self.ylim_slider.set([ylim_min, ylim_max])
+
             self.update_plot("Update Limits")
         
     def plot(self):
@@ -418,8 +418,7 @@ class App(customtkinter.CTk):
             self.plot_kwargs["label"] = self.ent_legend.get()
 
         if self.uselims_button.get() == 1:
-            self.ylim_l.set(np.min(self.data[:, 1]))
-            self.ylim_r.set(max(self.ymax,np.max(self.data[:,1])))
+            self.ylim_slider.set([np.min(self.data[:, 1]), max(self.ymax,np.max(self.data[:,1]))])
 
         if self.normalize_button.get() == 1: self.normalize()
         ######### create the plot
@@ -451,10 +450,6 @@ class App(customtkinter.CTk):
             aspect = self.aspect
             )
 
-        # if self.uselims_button.get() == 1:
-        #     self.ylim_l.set(0)
-        #     self.ylim_r.set(len(self.data[:,0]))
-
         if self.convert_pixels.get() == True:
             self.ax1.set(xticks=np.arange(0,len(self.data[0,:]), self.label_dist/self.pixel_size), xticklabels=np.arange(0,len(self.data[0,:])*self.pixel_size, self.label_dist))
             self.ax1.set(yticks=np.arange(0,len(self.data[:,0]), self.label_dist/self.pixel_size), yticklabels=np.arange(0,len(self.data[:,0])*self.pixel_size, self.label_dist))
@@ -481,26 +476,30 @@ class App(customtkinter.CTk):
     def update_plot(self, val):
         if self.uselims_button.get() == 1: 
             
-            print(val)
-            # self.x_l = self.xlim_l.get()
-            # self.x_r = self.xlim_r.get()
-            self.x_l, self.x_r = self.test.get()
-            self.y_l = self.ylim_l.get()
-            self.y_r = self.ylim_r.get()
+            self.x_l, self.x_r = self.xlim_slider.get()
+            self.y_l, self.y_r = self.ylim_slider.get()
 
             if isinstance(val, (tuple, float, str, set, dict)):
-                print("is instance")
-                self.xlim_lbox.delete(0, 'end')
-                self.xlim_lbox.insert(0,str(self.x_l))
-                self.xlim_rbox.delete(0, 'end')
-                self.xlim_rbox.insert(0,str(self.x_r))
-                self.ylim_lbox.delete(0, 'end')
-                self.ylim_lbox.insert(0,str(self.y_l))
-                self.ylim_rbox.delete(0, 'end')
-                self.ylim_rbox.insert(0,str(self.y_r))
+                for (lim_box, limit) in zip(["xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"],
+                                            ["x_l", "x_r", "y_l", "y_r"]):
+                    box = getattr(self,lim_box)
+                    box.delete(0,'end')
+                    if self.image_plot:
+                        box.insert(0,str(int(getattr(self,limit))))
+                    else:
+                        box.insert(0,str(round(getattr(self,limit),4-len(str(int(getattr(self,limit)))))))
+                # self.xlim_lbox.delete(0, 'end')
+                # self.xlim_lbox.insert(0,str(round(self.x_l,4-len(str(int(self.x_l))))))
+                # self.xlim_rbox.delete(0, 'end')
+                # self.xlim_rbox.insert(0,str(round(self.x_r,4-len(str(int(self.x_r))))))
+                # self.ylim_lbox.delete(0, 'end')
+                # self.ylim_lbox.insert(0,str(round(self.y_l,4-len(str(int(self.y_l))))))
+                # self.ylim_rbox.delete(0, 'end')
+                # self.ylim_rbox.insert(0,str(round(self.y_r,4-len(str(int(self.y_r))))))
 
             if self.image_plot: # display images
                 self.ax1.set_xlim(left=float(self.x_l), right=float(self.x_r))
+                print(self.y_l, self.y_r)
                 self.ax1.set_ylim(bottom=float(self.y_l), top=float(self.y_r))
 
             else: # line plot
@@ -559,42 +558,40 @@ class App(customtkinter.CTk):
         if self.uselims_button.get() == 1:
             row = 4 # 4 from the use_labels
             self.settings_frame.grid()
-            self.limits_title = App.create_label(self.settings_frame, text="Limits", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=4, padx=20, pady=(20, 10),sticky=None)
+            self.limits_title = App.create_label(self.settings_frame, text="Limits", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 10),sticky=None)
             self.labx = App.create_label(self.settings_frame, text="x limits", column=0, row=row+1)
-            self.laby = App.create_label(self.settings_frame, text="y limits", column=0, row=row+3)
+            self.laby = App.create_label(self.settings_frame, text="y limits", column=0, row=row+2)
 
             xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
 
-            for i, (lim_box, lim_val, lim_slider) in enumerate(zip(["xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"], # lim_box - entries
-                                                                   ["xlim_min", "xlim_max", "ylim_min", "ylim_max"],
-                                                                   ["xlim_l", "xlim_r", "ylim_l", "ylim_r"])): # lim_slider - slider 
-                value = locals()[lim_val]
+            for i, (lim_lbox, lim_rbox, lim_min, lim_max, lim_slider) in enumerate(zip(["xlim_lbox", "ylim_lbox"], # lim_box - entries
+                                                                   ["xlim_rbox", "ylim_rbox"],
+                                                                   ["xlim_min", "ylim_min"],
+                                                                   ["xlim_max", "ylim_max"],
+                                                                   ["xlim_slider", "ylim_slider"])): # lim_slider - slider 
+                value_min = locals()[lim_min]
+                value_max = locals()[lim_max]
 
-                if i < 2: # use xlimits for the x-sliders
-                    lim_min = xlim_min
-                    lim_max = xlim_max
-                else: # use ylimits for the y-sliders
-                    lim_min = ylim_min
-                    lim_max = ylim_max
-                
                 # create the entry objects "self.xlim_lbox" ...
-                setattr(self, lim_box, App.create_entry(self.settings_frame, row=row+i+1, column=3, width=60))
-                setattr(self, lim_slider, App.create_slider(self.settings_frame, from_=lim_min, to=lim_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =1, width=130, padx=(5,5), columnspan=2))
+                setattr(self, lim_lbox, App.create_entry(self.settings_frame, row=row+i+1, column=1, width=50))
+                setattr(self, lim_rbox, App.create_entry(self.settings_frame, row=row+i+1, column=4, width=50))
+                setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=value_min, to=value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=100, padx=(0,0), columnspan=2, init_value=[value_min, value_max]))
 
                 # get the name of the created object, first the entry, second the slider
-                entry_widget = getattr(self,lim_box)
+                entryl_widget = getattr(self,lim_lbox)
+                entryr_widget = getattr(self,lim_rbox)
                 slider_widget = getattr(self,lim_slider)
 
                 #set the properties of the entry object, key release event, set the value to the slider and update the limits,
                 # slider_widget = slider_widget is necessary to force the lambda function to capture the current value of slider_widget instead of calling it, when the key is pressed, otherwise slider_widget = ylim_r is used!
-                entry_widget.bind("<KeyRelease>", lambda event, val=entry_widget, slider_widget=slider_widget: (slider_widget.set(float(val.get())), self.update_plot(val)))
+                entryl_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: (slider_widget.set([float(val1.get()), float(val2.get())]), self.update_plot(val1)))
+                entryr_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: (slider_widget.set([float(val1.get()), float(val2.get())]), self.update_plot(val2)))
                 # insert the limits into the entry with 4 decimals
-                entry_widget.insert(0,str(round(value,4-len(str(int(value))))))
-                # set the value of the sliders to min and max values respectively
-                slider_widget.set(value)
-            self.test = App.create_range_slider(self.settings_frame, from_=xlim_min, to=xlim_max, command= lambda val=None: self.update_plot(val), row=row+5, column =1, width=130, padx=(5,5), columnspan=2)
+                entryl_widget.insert(0,str(round(value_min,4-len(str(int(value_min))))))
+                entryr_widget.insert(0,str(round(value_max,4-len(str(int(value_max))))))
+
         else:
-            for name in ["xlim_l","xlim_r","ylim_l","ylim_r","labx","laby","limits_title", "xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"]:
+            for name in ["xlim_slider","ylim_slider","labx","laby","limits_title", "xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"]:
                 getattr(self, name).grid_remove()
             self.close_settings_window()
         self.update_plot(None)
@@ -619,15 +616,14 @@ class App(customtkinter.CTk):
         if self.uselabels_button.get() == 1:
             row = 0
             self.settings_frame.grid()
-            self.labels_title = App.create_label(self.settings_frame, text="Labels", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=4, padx=20, pady=(20, 10),sticky=None)
-            self.ent_xlabel      = App.create_entry(self.settings_frame,column=1, row=row+1, columnspan=3)
-            self.ent_ylabel      = App.create_entry(self.settings_frame,column=1, row=row+2, columnspan=3)
-            self.ent_legend      = App.create_entry(self.settings_frame,column=1, row=row+3, columnspan=3)
-            self.ent_xlabel_text = App.create_label(self.settings_frame,column=0, row=row+1, text="x label")
-            self.ent_ylabel_text = App.create_label(self.settings_frame,column=0, row=row+2, text="y label")
-            self.ent_legend_text = App.create_label(self.settings_frame,column=0, row=row+3, text="legend")
+            self.labels_title = App.create_label(self.settings_frame, text="Labels", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 10),sticky=None)
+            self.ent_xlabel      = App.create_entry(self.settings_frame,column=1, row=row+1, columnspan=2, width=100, placeholder_text="x label")
+            self.ent_ylabel      = App.create_entry(self.settings_frame,column=3, row=row+1, columnspan=2, width=100, placeholder_text="y label")
+            self.ent_legend      = App.create_entry(self.settings_frame,column=1, row=row+2, columnspan=4, width=220)
+            self.ent_label_text = App.create_label(self.settings_frame,column=0, row=row+1, text="x / y")
+            self.ent_legend_text = App.create_label(self.settings_frame,column=0, row=row+2, text="legend")
         else:
-            for name in ["ent_xlabel","ent_xlabel_text","ent_ylabel","ent_ylabel_text","ent_legend","ent_legend_text","labels_title"]:
+            for name in ["ent_xlabel","ent_label_text","ent_ylabel","ent_legend","ent_legend_text","labels_title"]:
                 getattr(self, name).grid_remove()
             self.close_settings_window()
     
@@ -641,13 +637,13 @@ class App(customtkinter.CTk):
             self.cols = 2
 
             row = 9
-            self.multiplot_title = App.create_label( self.settings_frame,column=0, row=row, text="Multiplot Grid", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=4, padx=20, pady=(20, 10),sticky=None)
-            self.ent_rows        = App.create_entry( self.settings_frame,column=1, row=row+1, width=60, padx=(5,40))
+            self.multiplot_title = App.create_label( self.settings_frame,column=0, row=row, text="Multiplot Grid", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 10),sticky=None)
+            self.ent_rows        = App.create_entry( self.settings_frame,column=1, row=row+1, width=50, padx=(5,40),columnspan=2)
             self.ent_rows_text   = App.create_label( self.settings_frame,column=0, row=row+1, text="rows")
-            self.ent_cols        = App.create_entry( self.settings_frame,column=1, row=row+2, width=60, padx=(5,40))
+            self.ent_cols        = App.create_entry( self.settings_frame,column=1, row=row+2, width=50, padx=(5,40),columnspan=2)
             self.ent_cols_text   = App.create_label( self.settings_frame,column=0, row=row+2, text="cols")
-            self.switch_ticks    = App.create_switch(self.settings_frame,column=2, row=row+1, text="hide ticks",  command = lambda: self.toggle_boolean(self.hide_ticks), padx=(5,20), columnspan=2, sticky="w")
-            self.switch_multiplt = App.create_switch(self.settings_frame,column=2, row=row+2, text="1 multiplot", command = lambda: self.toggle_boolean(self.one_multiplot), padx=(5,20), columnspan=2, sticky="w")
+            self.switch_ticks    = App.create_switch(self.settings_frame,column=3, row=row+1, text="hide ticks",  command = lambda: self.toggle_boolean(self.hide_ticks), padx=(5,20), columnspan=2, sticky="w")
+            self.switch_multiplt = App.create_switch(self.settings_frame,column=3, row=row+2, text="1 multiplot", command = lambda: self.toggle_boolean(self.one_multiplot), padx=(5,20), columnspan=2, sticky="w")
             self.settings_frame.grid()
             self.addplot_button.grid() 
             self.reset_button.grid()
@@ -684,16 +680,16 @@ class App(customtkinter.CTk):
             # self.lineout_data = []
             self.settings_frame.grid()
             row = 12
-            self.lineout_title    = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=4, padx=20, pady=(20, 10),sticky=None)
-            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+2, values=[" x-line ", " y-line "], command=self.initialize_lineout, columnspan=1)
-            self.line_entry       = App.create_entry(self.settings_frame, row=row+1, column=3, width=60)
-            self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=max(len(self.data[:,0]), len(self.data[0,:])), command= lambda val=None: self.plot_lineout(val), row=row+1, column =1, width=130, padx=(5,5), columnspan=2)
+            self.lineout_title    = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 10),sticky=None)
+            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+2, values=[" x-line ", " y-line "], command=self.initialize_lineout, columnspan=2, padx=(10,10))
+            self.line_entry       = App.create_entry(self.settings_frame, row=row+1, column=1, width=50)
+            self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=max(len(self.data[:,0]), len(self.data[0,:])), command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=150, padx=(0,10), columnspan=3)
             self.ent_line_text    = App.create_label( self.settings_frame,column=0, row=row+1, text="line")
-            self.save_lineout_button = App.create_button(self.settings_frame, column = 2, row=row+2, text="Save Lineout", command= lambda: self.save_data_file(self.lineout_data), width=80, columnspan=2)
+            self.save_lineout_button = App.create_button(self.settings_frame, column = 3, row=row+2, text="Save Lineout", command= lambda: self.save_data_file(self.lineout_data), width=80, columnspan=2)
             self.line_entry.insert(0,str(int(len(self.data[:,0])/2)))
             self.line_entry.bind("<KeyRelease>", lambda event, val=self.line_entry, slider_widget=self.line_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
             self.choose_ax_button.set("x-line")
-            self.choose_ax_button.configure(border_width= 5, fg_color = ["#325882", "#14375e"], unselected_color = ["#3a7ebf", "#1f538d"], unselected_hover_color=["#325882", "#14375e"])
+            self.choose_ax_button.configure(border_width= 5, fg_color = ["#3a7ebf", "#1f538d"], unselected_color = ["#3a7ebf", "#1f538d"], unselected_hover_color=["#325882", "#14375e"])
             self.initialize_lineout(" x-line ")
         else:
             try:
@@ -708,10 +704,10 @@ class App(customtkinter.CTk):
     def initialize_lineout(self,val):
         self.initialize_plot()
         try:
-            self.x_lineout_min = int(self.xlim_l.get())
-            self.x_lineout_max = int(self.xlim_r.get())
-            self.y_lineout_min = int(self.ylim_l.get())
-            self.y_lineout_max = int(self.ylim_r.get())
+            self.x_lineout_min = int(self.xlim_slider.get()[0])
+            self.x_lineout_max = int(self.xlim_slider.get()[1])
+            self.y_lineout_min = int(self.ylim_slider.get()[0])
+            self.y_lineout_max = int(self.ylim_slider.get()[1])
         except:
             self.x_lineout_min = 0
             self.x_lineout_max = len(self.data[0,:])
@@ -790,23 +786,18 @@ class App(customtkinter.CTk):
         
     def update_limits(self):
         if self.image_plot:
-            self.xlim_l.configure(from_=0, to=len(self.data[0,:]))
-            self.xlim_r.configure(from_=0, to=len(self.data[0,:]))
-            self.ylim_l.configure(from_=0, to=len(self.data[:,0]))
-            self.ylim_r.configure(from_=0, to=len(self.data[:,0]))
-        else:    
-            self.xlim_l.configure(from_=np.floor(np.min(self.data[:, 0])), to=np.ceil(np.max(self.data[:, 0])))
-            self.xlim_r.configure(from_=np.floor(np.min(self.data[:, 0])), to=np.ceil(np.max(self.data[:, 0])))
-            self.ylim_l.configure(from_=np.min(self.data[:, 1]), to=self.ymax)
-            self.ylim_r.configure(from_=np.min(self.data[:, 1]), to=self.ymax)
+            self.xlim_slider.configure(from_=0, to=len(self.data[0,:]))
+            self.ylim_slider.configure(from_=0, to=len(self.data[:,0]))
+        else:
+            self.xlim_slider.configure(from_=np.floor(np.min(self.data[:, 0])), to=np.ceil(np.max(self.data[:, 0])))  
+            self.ylim_slider.configure(from_=np.min(self.data[:, 1]), to=self.ymax)
 
         
     def normalize_setup(self):
         if self.normalize_button.get() == 1:
-            if self.uselims_button.get() == 1:
+            if self.uselims_button.get() and not self.image_plot:
                 self.update_limits()
-                self.ylim_l.set(np.min(self.data[:, 1]))
-                self.ylim_r.set(np.max(self.data[:, 1]))
+                self.ylim_slider.set([np.min(self.data[:, 1]),np.max(self.data[:, 1])])
         self.initialize()
         
     
@@ -1052,9 +1043,9 @@ class FitWindow(customtkinter.CTkFrame):
         self.app = app
         self.row = 15
         self.widget_dict = {}
-        self.labels_title = App.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row, column=0, columnspan=4, padx=20, pady=(20, 10),sticky=None)
+        self.labels_title = App.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row, column=0, columnspan=5, padx=20, pady=(20, 10),sticky=None)
         self.function = {'Gaussian': gauss, 'Lorentz': lorentz, 'Linear': linear, 'Quadratic': quadratic, 'Exponential': exponential, 'Square Root': sqrt}
-        self.function_label = App.create_label(app.settings_frame, text="", column=1, row=self.row+1, width=80, columnspan=3, anchor='e', sticky="n")
+        self.function_label = App.create_label(app.settings_frame, text="", column=1, row=self.row+1, width=80, columnspan=4, anchor='e', sticky="n")
         self.function_label_list = {'Gaussian': "f(x) = a·exp(-(x-b)²/(2·c²)) + d", 
                                     'Lorentz': "f(x) = a/[(x²-b²)² + c²·b²]",
                                     'Linear': "f(x) = a·x + b", 
@@ -1062,7 +1053,7 @@ class FitWindow(customtkinter.CTkFrame):
                                     'Exponential': "f(x) = a·exp(b·x) + c", 
                                     'Square Root': "f(x) = a·sqrt(b·x) + c"}
         self.function_list_label = App.create_label(app.settings_frame,text="Fit", column=0,row=self.row+2, sticky="e")
-        self.function_list = App.create_combobox(app.settings_frame, values=list(self.function.keys()), command=self.create_params, width=200, column=1, row=self.row+2, columnspan=3, sticky="w")
+        self.function_list = App.create_combobox(app.settings_frame, values=list(self.function.keys()), command=self.create_params, width=200, column=1, row=self.row+2, columnspan=4, sticky="w")
         self.function_list.set('Gaussian')
         self.params = []
         self.error = []
@@ -1102,10 +1093,10 @@ class FitWindow(customtkinter.CTkFrame):
         if arg_number < self.number_of_args:
             self.widget_dict[f'fit_{name}'], self.widget_dict[f'fitlabel_{name}'] = self.create_fit_entry(label_text=name, column=1, row=self.row + arg_number + 3)
             self.widget_dict[f'str_var_{name}'] = customtkinter.StringVar() # StringVar to hold the label value
-            self.widget_dict[f'fitted_{name}'] = App.create_label(app.settings_frame, textvariable=self.widget_dict[f'str_var_{name}'], column=2, width=50, row=self.row + arg_number + 3, padx=(0, 20), columnspan=2)
+            self.widget_dict[f'fitted_{name}'] = App.create_label(app.settings_frame, textvariable=self.widget_dict[f'str_var_{name}'], column=3, width=50, row=self.row + arg_number + 3, padx=(0, 20), columnspan=2)
         
     def create_fit_entry(self, label_text, column, row):
-        fit_variable = App.create_entry(app.settings_frame, column=column, row=row, width=80, placeholder_text="0", sticky='w')
+        fit_variable = App.create_entry(app.settings_frame, column=column, row=row, width=80, placeholder_text="0", sticky='w', columnspan=2)
         fit_label    = App.create_label(app.settings_frame, text=label_text, column=column-1, row=row, anchor='e') 
         return fit_variable, fit_label
     
