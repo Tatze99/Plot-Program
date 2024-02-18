@@ -125,6 +125,9 @@ class App(customtkinter.CTk):
         self.moving_average = 1
         self.change_norm_to_area = customtkinter.BooleanVar(value=False)
         self.hide_ticks = customtkinter.BooleanVar(value=False)
+        self.use_grid_lines = customtkinter.BooleanVar(value=False)
+        self.grid_ticks = 'major'
+        self.grid_axis = 'both'
         
         # image plot settings
         self.cmap_imshow="magma"
@@ -162,7 +165,7 @@ class App(customtkinter.CTk):
         self.sidebar_frame.rowconfigure(15, weight=1)
         self.rowconfigure(11,weight=1)
 
-        App.create_label(self.sidebar_frame, text="GIES v."+version_number, font=customtkinter.CTkFont(size=20, weight="bold"),row=0, column=0, padx=20, pady=(20, 10), sticky=None)
+        App.create_label(self.sidebar_frame, text="GIES v."+version_number, font=customtkinter.CTkFont(size=20, weight="bold"),row=0, column=0, padx=20, pady=(10,15), sticky=None)
         
         self.tabview = customtkinter.CTkTabview(self, width=250)
         self.tabview.grid(row=3, column=1, padx=(10, 10), pady=(20, 0), columnspan=2, sticky="nsew", rowspan=10)
@@ -188,7 +191,7 @@ class App(customtkinter.CTk):
         self.multiplot_button = App.create_switch(frame, text="Multiplot",  command=self.multiplot,   column=0, row=7, padx=20, pady=(10,5))
         self.uselabels_button = App.create_switch(frame, text="Use labels", command=self.use_labels,  column=0, row=8, padx=20)
         self.uselims_button   = App.create_switch(frame, text="Use limits", command=self.use_limits,  column=0, row=9, padx=20)
-        self.fit_button       = App.create_switch(frame, text="Use fit",    command=lambda: self.open_widget(FitWindow), column=0, row=10, padx=20)
+        self.fit_button       = App.create_switch(frame, text="Use fit",    command=lambda: (self.open_widget(FitWindow), self.initialize), column=0, row=10, padx=20)
         self.normalize_button = App.create_switch(frame, text="Normalize",  command=self.normalize_setup,    column=0, row=11, padx=20)
         self.lineout_button = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
         
@@ -386,6 +389,13 @@ class App(customtkinter.CTk):
                 self.ax1.axes.yaxis.set_ticks([])
         except: pass
 
+        if self.use_grid_lines.get():
+            self.ax1.grid(visible=True, which=self.grid_ticks, axis=self.grid_axis)
+            # print(self.grid_ticks, self.grid_axis)
+            self.ax1.minorticks_on()
+        else:
+            self.ax1.grid(visible=False)
+
         # place labels only on the left and bottom plots (if there are multiplots)
         if self.uselabels_button.get() == 1:
             if self.plot_counter > self.cols*(self.rows-1): 
@@ -398,6 +408,8 @@ class App(customtkinter.CTk):
     def make_line_plot(self, file_path):
         if self.lineout_button.get():
             self.lineout_button.toggle()
+            self.initialize_plot()
+            return
         file_decimal = self.open_file(file_path)
         try:
             self.data = np.array(pd.read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
@@ -435,10 +447,27 @@ class App(customtkinter.CTk):
 
         # create the fit
         if self.use_fit == 1:
-            FitWindow.set_fit_params(self.settings_window)
-            self.ax1.plot(self.data[:, 0], self.fit_plot(self.function, self.params, self.data), **self.plot_kwargs)
-            if self.display_fit_params_in_plot.get():
-                self.ax1.text(0.05, 0.9, FitWindow.get_fitted_labels(self.settings_window), ha='left', va='top', transform=self.ax1.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'), size=8)
+            self.make_fit_plot("ax1", "data")
+            
+
+    def make_fit_plot(self, axis, data):
+        self.create_fit_border_lines(axis)
+        data = getattr(self,data)
+        axis = getattr(self,axis)
+        FitWindow.set_fit_params(self.fit_window)
+
+        self.fit_window.fit_borders_slider.configure(from_=np.min(data[:, 0]), to=np.max(data[:, 0]))  
+        if self.image_plot == self.image_plot_prev:
+            self.fit_window.fit_borders_slider.set([max(np.min(data[:,0]),self.fit_window.fit_borders_slider.get()[0]), min(np.max(data[:,0]),self.fit_window.fit_borders_slider.get()[1])])
+        else:
+            self.fit_window.fit_borders_slider.set([np.min(data[:, 0]), np.max(data[:, 0])])
+
+        minimum = np.argmin(abs(data[:,0] - self.fit_window.fit_borders_slider.get()[0]))
+        maximum = np.argmin(abs(data[:,0] - self.fit_window.fit_borders_slider.get()[1]))
+        
+        self.fit_lineout, = axis.plot(data[minimum:maximum, 0], self.fit_plot(self.function, self.params, data[minimum:maximum,:]), **self.plot_kwargs)
+        if self.display_fit_params_in_plot.get():
+            axis.text(0.05, 0.9, FitWindow.get_fitted_labels(self.fit_window), ha='left', va='top', transform=axis.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'), size=8)
 
     def make_image_plot(self, file_path):
         self.data = plt.imread(file_path)
@@ -488,18 +517,9 @@ class App(customtkinter.CTk):
                         box.insert(0,str(int(getattr(self,limit))))
                     else:
                         box.insert(0,str(round(getattr(self,limit),4-len(str(int(getattr(self,limit)))))))
-                # self.xlim_lbox.delete(0, 'end')
-                # self.xlim_lbox.insert(0,str(round(self.x_l,4-len(str(int(self.x_l))))))
-                # self.xlim_rbox.delete(0, 'end')
-                # self.xlim_rbox.insert(0,str(round(self.x_r,4-len(str(int(self.x_r))))))
-                # self.ylim_lbox.delete(0, 'end')
-                # self.ylim_lbox.insert(0,str(round(self.y_l,4-len(str(int(self.y_l))))))
-                # self.ylim_rbox.delete(0, 'end')
-                # self.ylim_rbox.insert(0,str(round(self.y_r,4-len(str(int(self.y_r))))))
 
             if self.image_plot: # display images
                 self.ax1.set_xlim(left=float(self.x_l), right=float(self.x_r))
-                print(self.y_l, self.y_r)
                 self.ax1.set_ylim(bottom=float(self.y_l), top=float(self.y_r))
 
             else: # line plot
@@ -519,7 +539,22 @@ class App(customtkinter.CTk):
                     ylim_r = calc_log_value(self.y_r + 0.05 * (self.y_r - self.y_l), np.min(abs(self.data[:,1])), np.max(self.data[:,1]))
                     self.ax1.set_ylim(bottom=float(ylim_l), top=float(ylim_r))
 
+        if self.fit_button.get():
+            try:
+                self.fit_xmin_line.set_xdata([self.fit_window.fit_borders_slider.get()[0]])
+                self.fit_xmax_line.set_xdata([self.fit_window.fit_borders_slider.get()[1]])
+            except:
+                if self.lineout_button.get():
+                    self.create_fit_border_lines("ax2")
+                else:
+                    self.create_fit_border_lines("ax1")
+            
         self.canvas.draw()
+    
+    def create_fit_border_lines(self, axis):
+        ax = getattr(self,axis)
+        self.fit_xmin_line = ax.axvline([self.fit_window.fit_borders_slider.get()[0]], alpha = 0.4, lw=0.5)
+        self.fit_xmax_line = ax.axvline([self.fit_window.fit_borders_slider.get()[1]], alpha = 0.4, lw=0.5)
 
     def change_plot(self, replot, direction):
         index = filelist.index(self.optmenu.get()) + direction
@@ -535,7 +570,7 @@ class App(customtkinter.CTk):
     def fit_plot(self, function, initial_params, data):
         params,K=cf(function,data[:, 0],data[:, 1], p0=initial_params)
         # write fit parameters in an array to access
-        FitWindow.set_fitted_values(self.settings_window, params, K)
+        FitWindow.set_fitted_values(self.fit_window, params, K)
         return function(data[:,0], *params)
         
     def read_file_list(self):
@@ -558,9 +593,9 @@ class App(customtkinter.CTk):
         if self.uselims_button.get() == 1:
             row = 4 # 4 from the use_labels
             self.settings_frame.grid()
-            self.limits_title = App.create_label(self.settings_frame, text="Limits", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 10),sticky=None)
-            self.labx = App.create_label(self.settings_frame, text="x limits", column=0, row=row+1)
-            self.laby = App.create_label(self.settings_frame, text="y limits", column=0, row=row+2)
+            self.limits_title = App.create_label(self.settings_frame, text="Limits", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=1, columnspan=5, padx=20, pady=(20, 5),sticky=None)
+            self.labx = App.create_label(self.settings_frame, text="x limit", column=0, row=row+1)
+            self.laby = App.create_label(self.settings_frame, text="y limit", column=0, row=row+2)
 
             xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
 
@@ -575,7 +610,7 @@ class App(customtkinter.CTk):
                 # create the entry objects "self.xlim_lbox" ...
                 setattr(self, lim_lbox, App.create_entry(self.settings_frame, row=row+i+1, column=1, width=50))
                 setattr(self, lim_rbox, App.create_entry(self.settings_frame, row=row+i+1, column=4, width=50))
-                setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=value_min, to=value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=100, padx=(0,0), columnspan=2, init_value=[value_min, value_max]))
+                setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=value_min, to=value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), columnspan=2, init_value=[value_min, value_max]))
 
                 # get the name of the created object, first the entry, second the slider
                 entryl_widget = getattr(self,lim_lbox)
@@ -616,10 +651,10 @@ class App(customtkinter.CTk):
         if self.uselabels_button.get() == 1:
             row = 0
             self.settings_frame.grid()
-            self.labels_title = App.create_label(self.settings_frame, text="Labels", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 10),sticky=None)
-            self.ent_xlabel      = App.create_entry(self.settings_frame,column=1, row=row+1, columnspan=2, width=100, placeholder_text="x label")
-            self.ent_ylabel      = App.create_entry(self.settings_frame,column=3, row=row+1, columnspan=2, width=100, placeholder_text="y label")
-            self.ent_legend      = App.create_entry(self.settings_frame,column=1, row=row+2, columnspan=4, width=220)
+            self.labels_title = App.create_label(self.settings_frame, text="Labels", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=1, columnspan=5, padx=20, pady=(20, 5),sticky=None)
+            self.ent_xlabel      = App.create_entry(self.settings_frame,column=1, row=row+1, columnspan=2, width=110, placeholder_text="x label")
+            self.ent_ylabel      = App.create_entry(self.settings_frame,column=3, row=row+1, columnspan=2, width=110, placeholder_text="y label")
+            self.ent_legend      = App.create_entry(self.settings_frame,column=1, row=row+2, columnspan=4, width=240)
             self.ent_label_text = App.create_label(self.settings_frame,column=0, row=row+1, text="x / y")
             self.ent_legend_text = App.create_label(self.settings_frame,column=0, row=row+2, text="legend")
         else:
@@ -637,7 +672,7 @@ class App(customtkinter.CTk):
             self.cols = 2
 
             row = 9
-            self.multiplot_title = App.create_label( self.settings_frame,column=0, row=row, text="Multiplot Grid", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 10),sticky=None)
+            self.multiplot_title = App.create_label( self.settings_frame,column=1, row=row, text="Multiplot Grid", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
             self.ent_rows        = App.create_entry( self.settings_frame,column=1, row=row+1, width=50, padx=(5,40),columnspan=2)
             self.ent_rows_text   = App.create_label( self.settings_frame,column=0, row=row+1, text="rows")
             self.ent_cols        = App.create_entry( self.settings_frame,column=1, row=row+2, width=50, padx=(5,40),columnspan=2)
@@ -668,6 +703,7 @@ class App(customtkinter.CTk):
             self.lineout_button.deselect()
 
         if self.lineout_button.get():
+            self.display_fit_params_in_plot.set(False)
             if self.multiplot_button.get():
                 self.multiplot_button.toggle()
             self.replot = True
@@ -680,10 +716,10 @@ class App(customtkinter.CTk):
             # self.lineout_data = []
             self.settings_frame.grid()
             row = 12
-            self.lineout_title    = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 10),sticky=None)
-            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+2, values=[" x-line ", " y-line "], command=self.initialize_lineout, columnspan=2, padx=(10,10))
+            self.lineout_title    = App.create_label( self.settings_frame,column=1, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
+            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+2, values=[" x-line ", " y-line "], command=self.initialize_lineout, columnspan=2, padx=(10,10), sticky="w")
             self.line_entry       = App.create_entry(self.settings_frame, row=row+1, column=1, width=50)
-            self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=max(len(self.data[:,0]), len(self.data[0,:])), command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=150, padx=(0,10), columnspan=3)
+            self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=max(len(self.data[:,0]), len(self.data[0,:])), command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=170, padx=(0,10), columnspan=3)
             self.ent_line_text    = App.create_label( self.settings_frame,column=0, row=row+1, text="line")
             self.save_lineout_button = App.create_button(self.settings_frame, column = 3, row=row+2, text="Save Lineout", command= lambda: self.save_data_file(self.lineout_data), width=80, columnspan=2)
             self.line_entry.insert(0,str(int(len(self.data[:,0])/2)))
@@ -703,12 +739,14 @@ class App(customtkinter.CTk):
 
     def initialize_lineout(self,val):
         self.initialize_plot()
-        try:
+        if self.lineout_button.get() == False: return
+
+        if self.uselims_button.get():
             self.x_lineout_min = int(self.xlim_slider.get()[0])
             self.x_lineout_max = int(self.xlim_slider.get()[1])
             self.y_lineout_min = int(self.ylim_slider.get()[0])
             self.y_lineout_max = int(self.ylim_slider.get()[1])
-        except:
+        else:
             self.x_lineout_min = 0
             self.x_lineout_max = len(self.data[0,:])
             self.y_lineout_min = 0
@@ -734,8 +772,8 @@ class App(customtkinter.CTk):
         self.line_entry.delete(0, 'end')
         self.line_entry.insert(0,str(int(self.line_slider.get())))
         
-        max_value = np.max(self.data)
         self.ax2 = self.fig.add_subplot(1,2,2)
+        max_value = np.max(self.data)
 
         self.plot_kwargs = dict(
             linestyle = self.linestyle,
@@ -758,7 +796,8 @@ class App(customtkinter.CTk):
         self.ax2.set_ylim(0, max_value)
 
         if self.use_fit == 1:
-            self.fit_lineout, = self.ax2.plot(self.lineout_data[:, 0], self.fit_plot(self.function, self.params, self.lineout_data), **self.plot_kwargs)
+            self.make_fit_plot("ax2", "lineout_data")
+            # self.create_fit_border_lines("ax2")
         self.canvas.draw()
         self.choose_ax_button.set(None)
 
@@ -775,9 +814,10 @@ class App(customtkinter.CTk):
         
         self.lineout_plot.set_ydata(self.lineout_data[:,1])
         if self.use_fit == 1:
-            self.fit_lineout.set_ydata(self.fit_plot(self.function, self.params, self.lineout_data))
-            # if self.display_fit_params_in_plot.get():
-            #     self.ax2.text(0.05, 0.9, FitWindow.get_fitted_labels(self.settings_window), ha='left', va='top', transform=self.ax1.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'))
+            minimum = np.argmin(abs(self.lineout_data[:,0] - self.fit_window.fit_borders_slider.get()[0]))
+            maximum = np.argmin(abs(self.lineout_data[:,0] - self.fit_window.fit_borders_slider.get()[1]))
+            self.fit_lineout.set_xdata(self.lineout_data[minimum:maximum,0])
+            self.fit_lineout.set_ydata(self.fit_plot(self.function, self.params, self.lineout_data[minimum:maximum,:]))
         self.canvas.draw()
 
     def save_data_file(self, data):
@@ -885,11 +925,11 @@ class App(customtkinter.CTk):
             
     def open_widget(self,cls):
         if self.fit_button.get() == 1:
-            self.settings_window = cls(self)  # create window if its None or destroyed
+            self.fit_window = cls(self)  # create window if its None or destroyed
         else:
-            self.settings_window.close_window()
+            self.fit_window.close_window()
             self.close_settings_window()
-            self.settings_window.destroy()
+            self.fit_window.destroy()
             
     def on_closing(self):
         quit() # Python 3.12 works
@@ -917,42 +957,47 @@ class SettingsWindow(customtkinter.CTkToplevel):
         # values for line plots
         self.values = {'solid': '-', 'dashed': '--', 'dotted': ':', 'dashdotted': '-.', 'no line': ''}
         self.markers = {'none':'', 'point':'.', 'circle':'o', 'pixel':',', 'triangle down': 'v', 'triangle up': '^', 'x': 'x', 'diamond': 'D'}
+        self.grid_lines = ['major','minor','both']
+        self.grid_axis = ['both', 'x', 'y']
         self.cmap = ['tab10', 'tab20', 'tab20b','tab20c', 'Pastel1', 'Pastel2', 'Paired', 'Accent', 'Dark2', 'Set1', 'Set2', 'Set3']
         self.moving_average = ['1','2','4','6','8','10','16']
         self.plot_type = {'Normal': 'plot', 'Semi Logarithmic x': 'semilogx', 'Semi Logarithmic y': 'semilogy', 'Log-Log plot': 'loglog'}
 
-        App.create_label(self, column=1, row=0, text="Image plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 10), sticky=None)
-        App.create_label(self, column=1, row=6, text="Line plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 10), sticky=None)
+        App.create_label(self, column=1, row=0, columnspan=2, text="Image plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
+        App.create_label(self, column=1, row=6, columnspan=2, text="Line plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
         # values for image plots
-        self.pixel_size         = App.create_entry(   self, column=1, row=1, text="Pixel size [µm]", placeholder_text="7.4 µm", sticky='w')
-        self.label_dist         = App.create_entry(   self, column=1, row=2, text="Label step [mm]", placeholder_text="1 mm", sticky='w')
-        self.aspect             = App.create_optionMenu(self, column=1, row=3, values=self.aspect_values, text="Aspect",  command=self.set_plot_settings)
-        self.cmap_imshow_list   = App.create_optionMenu(self, column=1, row=4, values=self.cmap_imshow,                text="Colormap",command=self.set_plot_settings)
-        self.enhance_slider     = App.create_slider(  self, column=1, row=5, init_value=1, from_=0.1, to=2, 
+        self.pixel_size         = App.create_entry(   self, column=1, row=1, columnspan=2, text="Pixel size [µm]", placeholder_text="7.4 µm", sticky='w')
+        self.label_dist         = App.create_entry(   self, column=1, row=2, columnspan=2, text="Label step [mm]", placeholder_text="1 mm", sticky='w')
+        self.aspect             = App.create_optionMenu(self, column=1, row=3, columnspan=2, values=self.aspect_values, text="Aspect",  command=self.set_plot_settings)
+        self.cmap_imshow_list   = App.create_optionMenu(self, column=1, row=4, columnspan=2, values=self.cmap_imshow,                text="Colormap",command=self.set_plot_settings)
+        self.enhance_slider     = App.create_slider(  self, column=1, row=5, columnspan=2, init_value=1, from_=0.1, to=2, 
                                                     command= lambda value, var="enhance_var": self.update_slider_value(value, var), text="Enhance value", number_of_steps=10)
 
         # values for line plots
-        self.plot_type_list     = App.create_optionMenu(self, column=1, row=7, values=list(self.plot_type.keys()),text="Plot type",command=self.set_plot_settings)
-        self.linestyle_list     = App.create_optionMenu(self, column=1, row=8, values=list(self.values.keys()), text="Line style", command=self.set_plot_settings)
-        self.marker_list        = App.create_optionMenu(self, column=1, row=9, values=list(self.markers.keys()),text="Marker",     command=self.set_plot_settings)
-        self.cmap_list          = App.create_optionMenu(self, column=1, row=10, values=self.cmap,                text="Colormap",   command=self.set_plot_settings)
-        self.moving_av_list     = App.create_optionMenu(self, column=1, row=11, values=self.moving_average,      text="Average",   command=self.set_plot_settings)
-        self.linewidth_slider   = App.create_slider(  self,  column=1, row=12, init_value=1, from_=0.1, to=2, 
+        self.plot_type_list     = App.create_optionMenu(self, column=1, row=7, columnspan=2, values=list(self.plot_type.keys()),text="Plot type",command=self.set_plot_settings)
+        self.linestyle_list     = App.create_optionMenu(self, column=1, row=8, columnspan=2, values=list(self.values.keys()), text="Line style", command=self.set_plot_settings)
+        self.marker_list        = App.create_optionMenu(self, column=1, row=9, columnspan=2, values=list(self.markers.keys()),text="Marker",     command=self.set_plot_settings)
+        self.cmap_list          = App.create_optionMenu(self, column=1, row=10, columnspan=2, values=self.cmap,                text="Colormap",   command=self.set_plot_settings)
+        self.grid_lines_list    = App.create_optionMenu(self, column=1, row=11, width=90, values=self.grid_lines, text="Grid",  command=self.set_plot_settings)
+        self.grid_axis_list     = App.create_optionMenu(self, column=2, row=11, width=90, values=self.grid_axis, command=self.set_plot_settings)
+        self.moving_av_list     = App.create_optionMenu(self, column=1, row=12, columnspan=2, values=self.moving_average,      text="Average",   command=self.set_plot_settings)
+        self.linewidth_slider   = App.create_slider(  self,  column=1, row=13, columnspan=2, init_value=1, from_=0.1, to=2, 
                                                     command= lambda value, var="lw_var": self.update_slider_value(value, var), text="line width", number_of_steps=10)
 
-        self.reset_button           = App.create_button(self, column=3, row=0, text="Reset Settings",   command=self.reset_values, width=130, pady=(20,5))
-        self.scale_switch_button    = App.create_switch(self, column=3, row=1, text="Use Scalebar",     command=lambda: self.toggle_boolean(self.app.use_scalebar))
-        self.cbar_switch_button     = App.create_switch(self, column=3, row=2, text="Use Colorbar",     command=lambda: self.toggle_boolean(self.app.use_colorbar))
-        self.convert_pixels_button  = App.create_switch(self, column=3, row=3, text="Convert Pixels",   command=lambda: self.toggle_boolean(self.app.convert_pixels))
-        self.save_plain_img_button  = App.create_switch(self, column=3, row=4, text="Save plain images",command=lambda: self.toggle_boolean(self.app.save_plain_image))
-        self.hide_params_button     = App.create_switch(self, column=3, row=5, text="Hide fit params",  command=lambda: self.toggle_boolean(self.app.display_fit_params_in_plot))
-        self.norm_switch_button     = App.create_switch(self, column=3, row=6, text="Normalize 'Area'", command=lambda: self.toggle_boolean(self.app.change_norm_to_area))
+        self.reset_button           = App.create_button(self, column=4, row=0, text="Reset Settings",   command=self.reset_values, width=130, pady=(20,5))
+        self.scale_switch_button    = App.create_switch(self, column=4, row=1, text="Use Scalebar",     command=lambda: self.toggle_boolean(self.app.use_scalebar))
+        self.cbar_switch_button     = App.create_switch(self, column=4, row=2, text="Use Colorbar",     command=lambda: self.toggle_boolean(self.app.use_colorbar))
+        self.convert_pixels_button  = App.create_switch(self, column=4, row=3, text="Convert Pixels",   command=lambda: self.toggle_boolean(self.app.convert_pixels))
+        self.save_plain_img_button  = App.create_switch(self, column=4, row=4, text="Save plain images",command=lambda: self.toggle_boolean(self.app.save_plain_image))
+        self.hide_params_button     = App.create_switch(self, column=4, row=5, text="Hide fit params",  command=lambda: self.toggle_boolean(self.app.display_fit_params_in_plot))
+        self.norm_switch_button     = App.create_switch(self, column=4, row=6, text="Normalize 'Area'", command=lambda: self.toggle_boolean(self.app.change_norm_to_area))
+        self.grid_lines_button     = App.create_switch(self, column=4, row=7, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
         
         # Slider labels    
         self.enhance_var = customtkinter.StringVar()  # StringVar to hold the label value
         self.lw_var = customtkinter.StringVar()  # StringVar to hold the label value
-        App.create_label(self, textvariable=self.enhance_var, column=2, row=5, width=30, anchor='w', sticky='w')
-        App.create_label(self, textvariable=self.lw_var, column=2, row=12, width=30, anchor='w', sticky='w')
+        App.create_label(self, textvariable=self.enhance_var, column=3, row=5, width=30, anchor='w', sticky='w')
+        App.create_label(self, textvariable=self.lw_var, column=3, row=13, width=30, anchor='w', sticky='w')
         
         self.pixel_size.bind("<KeyRelease>", self.set_plot_settings)
         self.label_dist.bind("<KeyRelease>", self.set_plot_settings)
@@ -970,6 +1015,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.marker_list.set(list(self.markers.keys())[list(self.markers.values()).index(self.app.markers)])
         self.plot_type_list.set(list(self.plot_type.keys())[list(self.plot_type.values()).index(self.app.plot_type)])
         self.cmap_list.set(self.app.cmap)
+        self.grid_lines_list.set(self.app.grid_ticks)
+        self.grid_axis_list.set(self.app.grid_axis)
         self.moving_av_list.set(self.app.moving_average)
         self.enhance_slider.set(self.app.enhance_value)
         self.linewidth_slider.set(self.app.linewidth)
@@ -982,6 +1029,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         if self.app.display_fit_params_in_plot.get() == False: self.hide_params_button.select()
         if self.app.change_norm_to_area.get() == True: self.norm_switch_button.select()
         if self.app.save_plain_image.get(): self.save_plain_img_button.select()
+        if self.app.use_grid_lines.get(): self.grid_lines_button.select()
 
     # reset to defaul values
     def reset_values(self):
@@ -998,6 +1046,9 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.linestyle_list.set(next(iter(self.values)))
         self.marker_list.set(next(iter(self.markers)))
         self.cmap_list.set(self.cmap[0])
+        self.grid_lines_button.deselect()
+        self.grid_lines_list.set(self.grid_lines[0])
+        self.grid_axis_list.set(self.grid_axis[0])
         self.moving_av_list.set(str(self.moving_average[0]))
         self.plot_type_list.set(next(iter(self.plot_type)))
 
@@ -1026,6 +1077,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app.cmap=self.cmap_list.get()
         self.app.linewidth=self.linewidth_slider.get()
         self.app.moving_average = int(self.moving_av_list.get())
+        self.app.grid_ticks = self.grid_lines_list.get()
+        self.app.grid_axis = self.grid_axis_list.get()
         self.app.plot_type=self.plot_type[self.plot_type_list.get()]
 
     def toggle_boolean(self, boolean):
@@ -1043,18 +1096,27 @@ class FitWindow(customtkinter.CTkFrame):
         self.app = app
         self.row = 15
         self.widget_dict = {}
-        self.labels_title = App.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row, column=0, columnspan=5, padx=20, pady=(20, 10),sticky=None)
+        self.labels_title = App.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row , column=1, columnspan=5, padx=20, pady=(20, 5),sticky=None)
         self.function = {'Gaussian': gauss, 'Lorentz': lorentz, 'Linear': linear, 'Quadratic': quadratic, 'Exponential': exponential, 'Square Root': sqrt}
-        self.function_label = App.create_label(app.settings_frame, text="", column=1, row=self.row+1, width=80, columnspan=4, anchor='e', sticky="n")
+        self.function_label = App.create_label(app.settings_frame, text="", column=1, row=self.row +1, width=80, columnspan=4, anchor='e', sticky="w")
         self.function_label_list = {'Gaussian': "f(x) = a·exp(-(x-b)²/(2·c²)) + d", 
                                     'Lorentz': "f(x) = a/[(x²-b²)² + c²·b²]",
                                     'Linear': "f(x) = a·x + b", 
                                     'Quadratic': "f(x) = a·x² + b·x + c", 
                                     'Exponential': "f(x) = a·exp(b·x) + c", 
                                     'Square Root': "f(x) = a·sqrt(b·x) + c"}
-        self.function_list_label = App.create_label(app.settings_frame,text="Fit", column=0,row=self.row+2, sticky="e")
-        self.function_list = App.create_combobox(app.settings_frame, values=list(self.function.keys()), command=self.create_params, width=200, column=1, row=self.row+2, columnspan=4, sticky="w")
+        self.function_list_label = App.create_label(app.settings_frame,text="Fit", column=0,row=self.row +2, sticky="e")
+        self.function_list = App.create_combobox(app.settings_frame, values=list(self.function.keys()), command=self.create_params, width=110, column=1, row=self.row +2, columnspan=2, sticky="w")
         self.function_list.set('Gaussian')
+
+        if app.lineout_button.get():
+            data = app.lineout_data
+        else:
+            data = app.data
+
+        if (not app.image_plot or app.lineout_button.get()):
+            self.fit_borders_slider = App.create_range_slider(app.settings_frame, from_=np.min(data[:,0]), to=np.max(data[:,0]), command= lambda val=None: app.update_plot(val), row=self.row+2, column =3, width=120, padx=(0,0), columnspan=2, init_value=[np.min(data[:,0]), np.max(data[:,0])])
+
         self.params = []
         self.error = []
         self.create_params('Gaussian')
@@ -1074,8 +1136,8 @@ class FitWindow(customtkinter.CTkFrame):
 
         if self.function_name == "Gaussian":
             self.widget_dict['str_var_FWHM'] = customtkinter.StringVar()
-            # self.widget_dict['fitted_FWHM'] = App.create_label(app.settings_frame,textvariable=self.widget_dict['str_var_FWHM'], column=2,row=self.row + 7, sticky="e", padx=(0,20), columnspan=2)
-            # self.widget_dict['fittedlabel_FWHM']  = App.create_label(app.settings_frame,text='FWHM =', column=1,row=self.row + 7, sticky=None, columnspan=1)
+            # self.widget_dict['fitted_FWHM'] = App.create_label(app.settings_frame,textvariable=self.widget_dict['str_var_FWHM'], column=2,row=row + 7, sticky="e", padx=(0,20), columnspan=2)
+            # self.widget_dict['fittedlabel_FWHM']  = App.create_label(app.settings_frame,text='FWHM =', column=1,row=row + 7, sticky=None, columnspan=1)
         # else:
             # try: self.widget_dict['fitted_FWHM'].grid_remove(), self.widget_dict['fittedlabel_FWHM'].grid_remove()
             # except: 
@@ -1112,7 +1174,7 @@ class FitWindow(customtkinter.CTkFrame):
             self.params = params
             self.error = error
             
-            # print(abs(np.sqrt(error[i,i])))
+
             try:
                 round_digit = -int(np.floor(np.log10(abs(np.sqrt(error[i,i])))))
             except:
@@ -1162,6 +1224,7 @@ class FitWindow(customtkinter.CTkFrame):
         self.function_list.grid_remove()
         self.function_list_label.grid_remove()
         self.function_label.grid_remove()
+        self.fit_borders_slider.grid_remove()
         self.app.use_fit = app.fit_button.get()
 
 '''
