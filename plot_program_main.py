@@ -3,6 +3,8 @@
 Created on Sun Sep 18 14:28:26 2022
 
 @author: Martin
+
+to do: implement minor ticks as option
 """
 # import tkinter
 import os
@@ -141,7 +143,7 @@ class App(customtkinter.CTk):
         # fit settings
         self.use_fit = 0
         self.function = gauss
-        self.params = [1,1030,10,0]
+        self.params = [1,1,1,1]
         self.fitted_params = [0,0,0,0]
 
         # Boolean variables
@@ -368,30 +370,21 @@ class App(customtkinter.CTk):
             if self.plot_counter > self.rows*self.cols: return
             self.ax1 = self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter)
         # multiplot but same axis, no image plot!
-        elif self.replot and self.one_multiplot.get() and not self.image_plot:
-            if self.plot_counter == 1: 
-                self.ax1 = self.fig.add_subplot(1,1,1)
-                self.ax1.set_prop_cycle(cycler(color=plt.get_cmap(self.cmap).colors))
-            else: pass
-        # single plot
-        else:
+        elif (self.replot and self.one_multiplot.get() and not self.image_plot and self.plot_counter == 1) or not self.replot:
             self.ax1 = self.fig.add_subplot(1,1,1)
-            if not self.image_plot: self.ax1.set_prop_cycle(cycler(color=plt.get_cmap(self.cmap).colors))
+            self.ax1.set_prop_cycle(cycler(color=plt.get_cmap(self.cmap).colors))
 
         # create the plot depending if we have a line or image plot
         if self.image_plot: self.make_image_plot(file_path)
         else:               self.make_line_plot(file_path)
         
         # if the hide_ticks option has been chosen in the multiplot, settings window
-        try:
-            if self.hide_ticks.get() == 1:
-                self.ax1.axes.xaxis.set_ticks([])
-                self.ax1.axes.yaxis.set_ticks([])
-        except: pass
+        if self.hide_ticks.get():
+            self.ax1.axes.xaxis.set_ticks([])
+            self.ax1.axes.yaxis.set_ticks([])
 
         if self.use_grid_lines.get():
             self.ax1.grid(visible=True, which=self.grid_ticks, axis=self.grid_axis)
-            # print(self.grid_ticks, self.grid_axis)
             self.ax1.minorticks_on()
         else:
             self.ax1.grid(visible=False)
@@ -400,7 +393,8 @@ class App(customtkinter.CTk):
         if self.uselabels_button.get() == 1:
             if self.plot_counter > self.cols*(self.rows-1): 
                 self.ax1.set_xlabel(self.ent_xlabel.get())
-            if (self.plot_counter-1) % self.cols == 0: self.ax1.set_ylabel(self.ent_ylabel.get())
+            if (self.plot_counter-1) % self.cols == 0: 
+                self.ax1.set_ylabel(self.ent_ylabel.get())
 
         self.update_plot(None)
         self.plot_counter += 1
@@ -426,18 +420,18 @@ class App(customtkinter.CTk):
             linewidth = self.linewidth,
             )
         
-        if self.uselabels_button.get() == 1: 
+        if self.uselabels_button.get(): 
             self.plot_kwargs["label"] = self.ent_legend.get()
 
-        if self.uselims_button.get() == 1:
+        if self.uselims_button.get():
             self.ylim_slider.set([np.min(self.data[:, 1]), max(self.ymax,np.max(self.data[:,1]))])
 
-        if self.normalize_button.get() == 1: self.normalize()
+        if self.normalize_button.get(): self.normalize()
         ######### create the plot
         plot = getattr(self.ax1, self.plot_type)
         plot(self.data[:, 0], moving_average(self.data[:, 1], self.moving_average), **self.plot_kwargs)
         #########
-        if self.uselabels_button.get() == 1 and self.ent_legend.get() != "": self.ax1.legend()
+        if self.uselabels_button.get() and self.ent_legend.get() != "": self.ax1.legend()
 
         # create the list
         self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=self.plot_counter, pady=(0,0), padx=10)
@@ -454,7 +448,6 @@ class App(customtkinter.CTk):
         self.create_fit_border_lines(axis)
         data = getattr(self,data)
         axis = getattr(self,axis)
-        FitWindow.set_fit_params(self.fit_window)
 
         self.fit_window.fit_borders_slider.configure(from_=np.min(data[:, 0]), to=np.max(data[:, 0]))  
         if self.image_plot == self.image_plot_prev:
@@ -464,6 +457,7 @@ class App(customtkinter.CTk):
 
         minimum = np.argmin(abs(data[:,0] - self.fit_window.fit_borders_slider.get()[0]))
         maximum = np.argmin(abs(data[:,0] - self.fit_window.fit_borders_slider.get()[1]))
+        FitWindow.set_fit_params(self.fit_window, data[minimum:maximum,:])
         
         self.fit_lineout, = axis.plot(data[minimum:maximum, 0], self.fit_plot(self.function, self.params, data[minimum:maximum,:]), **self.plot_kwargs)
         if self.display_fit_params_in_plot.get():
@@ -484,12 +478,12 @@ class App(customtkinter.CTk):
             self.ax1.set(yticks=np.arange(0,len(self.data[:,0]), self.label_dist/self.pixel_size), yticklabels=np.arange(0,len(self.data[:,0])*self.pixel_size, self.label_dist))
 
         # normalize the image brightness
-        if self.normalize_button.get() == 1: self.normalize()
+        if self.normalize_button.get(): self.normalize()
         ######### create the plot
         plot = self.ax1.imshow(self.data, **self.plot_kwargs)
         #########
         # use axis labels and add a legend
-        if self.uselabels_button.get() == 1 and self.ent_legend.get() != "": 
+        if self.uselabels_button.get() and self.ent_legend.get() != "": 
             self.ax1.text(0.95, 0.95, self.ent_legend.get(), ha='right', va='top', transform=self.ax1.transAxes, bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'))
 
         # use a scalebar on the bottom right corner
@@ -713,7 +707,6 @@ class App(customtkinter.CTk):
             self.cols = 2
             self.rows = 1
             self.lineout_xy = " x-line "
-            # self.lineout_data = []
             self.settings_frame.grid()
             row = 12
             self.lineout_title    = App.create_label( self.settings_frame,column=1, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
@@ -790,7 +783,7 @@ class App(customtkinter.CTk):
         # asp = np.diff(self.ax2.get_xlim())[0] / np.diff(self.ax2.get_ylim())[0]*asp_image
         asp = np.diff(self.ax2.get_xlim())[0] / max_value*asp_image
 
-        if self.uselabels_button.get() == 1:
+        if self.uselabels_button.get():
             self.ax2.set_xlabel(self.ent_xlabel.get())
         self.ax2.set_aspect(abs(asp))
         self.ax2.set_ylim(0, max_value)
@@ -834,7 +827,7 @@ class App(customtkinter.CTk):
 
         
     def normalize_setup(self):
-        if self.normalize_button.get() == 1:
+        if self.normalize_button.get():
             if self.uselims_button.get() and not self.image_plot:
                 self.update_limits()
                 self.ylim_slider.set([np.min(self.data[:, 1]),np.max(self.data[:, 1])])
@@ -1120,7 +1113,7 @@ class FitWindow(customtkinter.CTkFrame):
         self.params = []
         self.error = []
         self.create_params('Gaussian')
-        self.set_fit_params()
+        # self.set_fit_params()
         app.settings_frame.grid()
         
     def create_params(self, function_name):
@@ -1142,7 +1135,7 @@ class FitWindow(customtkinter.CTkFrame):
             # try: self.widget_dict['fitted_FWHM'].grid_remove(), self.widget_dict['fittedlabel_FWHM'].grid_remove()
             # except: 
                 # pass
-        self.set_fit_params()
+        self.set_fit_params(app.data)
         self.row += 2 + self.number_of_args
     
     def create_parameter(self, name, arg_number):
@@ -1191,7 +1184,7 @@ class FitWindow(customtkinter.CTkFrame):
             string += "\n" + name +" = " + str(round(self.params[i],round_digit))+" ± "+str(round(np.sqrt(self.error[i,i]),round_digit))
         return string
         
-    def set_fit_params(self):
+    def set_fit_params(self, data):
         self.app.params = []
         for i,name in enumerate(['a','b','c','d']):
             if i >= self.number_of_args: break   # take only the right number of arguments
@@ -1201,12 +1194,8 @@ class FitWindow(customtkinter.CTkFrame):
             except ValueError:
                 self.app.params.append(1)
                 if (self.function_name == "Gaussian" or self.function_name == "Lorentz") and i == 1:
-                    if app.lineout_button.get():
-                        self.app.params[1] = app.lineout_data[np.argmax(app.lineout_data[:,1]),0]
-                        self.app.params[0] = np.max(app.lineout_data[:,1])
-                    else:
-                        self.app.params[1] = app.data[np.argmax(app.data[:,1]),0]
-                        self.app.params[0] = np.max(app.data[:,1])
+                    self.app.params[1] = data[np.argmax(data[:,1]),0]
+                    self.app.params[0] = np.max(data[:,1])
 
         self.app.function = self.function[self.function_list.get()]
         # app.initialize_plot()
