@@ -22,6 +22,7 @@ import pandas as pd
 import matplotlib
 from cycler import cycler
 from scipy.optimize import curve_fit as cf
+from scipy.interpolate import interp1d
 from inspect import signature # get number of arguments of a function
 
 version_number = "24/02"
@@ -195,7 +196,8 @@ class App(customtkinter.CTk):
         self.uselims_button   = App.create_switch(frame, text="Use limits", command=self.use_limits,  column=0, row=9, padx=20)
         self.fit_button       = App.create_switch(frame, text="Use fit",    command=lambda: (self.open_widget(FitWindow), self.initialize), column=0, row=10, padx=20)
         self.normalize_button = App.create_switch(frame, text="Normalize",  command=self.normalize_setup,    column=0, row=11, padx=20)
-        self.lineout_button = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
+        self.lineout_button   = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
+        self.FFT_button       = App.create_switch(frame, text="FFT",  command=self.fourier_trafo,    column=0, row=13, padx=20)
         
         for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button"]:
                 getattr(self, name).configure(state="disabled")
@@ -299,6 +301,8 @@ class App(customtkinter.CTk):
     def initialize(self):
         if self.lineout_button.get():
             self.initialize_lineout(self.lineout_xy)
+        elif self.FFT_button.get():
+            self.initialize_FFT()
         else:
             self.initialize_plot()
 
@@ -324,7 +328,7 @@ class App(customtkinter.CTk):
             for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button"]:
                 getattr(self, name).configure(state="enabled")
             
-        if self.replot and not self.lineout_button.get():
+        if self.replot and not self.lineout_button.get() and not self.FFT_button.get():
             self.rows=float(self.ent_rows.get())
             self.cols=float(self.ent_cols.get())
 
@@ -440,7 +444,7 @@ class App(customtkinter.CTk):
             widget.configure(width=min(300,0.75*self.tabview.winfo_width()/(1.1*self.plot_counter+1)))
 
         # create the fit
-        if self.use_fit == 1:
+        if self.use_fit == 1 and not self.FFT_button.get():
             self.make_fit_plot("ax1", "data")
             
 
@@ -458,6 +462,9 @@ class App(customtkinter.CTk):
         minimum = np.argmin(abs(data[:,0] - self.fit_window.fit_borders_slider.get()[0]))
         maximum = np.argmin(abs(data[:,0] - self.fit_window.fit_borders_slider.get()[1]))
         FitWindow.set_fit_params(self.fit_window, data[minimum:maximum,:])
+
+        print(data)
+        print(self.params)
         
         self.fit_lineout, = axis.plot(data[minimum:maximum, 0], self.fit_plot(self.function, self.params, data[minimum:maximum,:]), **self.plot_kwargs)
         if self.display_fit_params_in_plot.get():
@@ -813,6 +820,96 @@ class App(customtkinter.CTk):
             self.fit_lineout.set_ydata(self.fit_plot(self.function, self.params, self.lineout_data[minimum:maximum,:]))
         self.canvas.draw()
 
+    def fourier_trafo(self):
+        if self.image_plot == True:
+            self.FFT_button.deselect()
+
+        if self.FFT_button.get():
+            self.display_fit_params_in_plot.set(False)
+            if self.multiplot_button.get():
+                self.multiplot_button.toggle()
+            self.replot = True
+            self.one_multiplot.set(False)
+            self.multiplot_button.configure(state="disabled")
+            
+
+            self.cols = 2
+            self.rows = 1
+            self.settings_frame.grid()
+            row = 15
+            self.FFT_title    = App.create_label( self.settings_frame,column=1, row=row, text="Fourier Transform", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
+            self.padd_zeros_entry = App.create_entry(self.settings_frame, row=row+1, column=1, width=50)
+            self.padd_zeros_text  = App.create_label( self.settings_frame,column=0, row=row+1, text="padd 0's")
+            self.save_FFT_button = App.create_button(self.settings_frame, column = 3, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
+            self.padd_zeros_entry.insert(0,str(0))
+            self.initialize_FFT()
+            # self.line_entry.bind("<KeyRelease>", lambda event, val=self.line_entry, slider_widget=self.line_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
+        else:
+            try:
+                for name in ["FFT_title", "padd_zeros_entry", "padd_zeros_text", "save_FFT_button"]:
+                    getattr(self, name).grid_remove()
+            except:
+                return
+            self.multiplot_button.configure(state="enabled")
+            self.replot = False
+            self.close_settings_window()
+
+    def initialize_FFT(self):
+        self.initialize_plot()
+        if self.FFT_button.get() == False: return
+
+        # if self.uselims_button.get():
+        #     self.x_FFT_min = self.xlim_slider.get()[0]
+        #     self.x_FFT_max = self.xlim_slider.get()[1]
+        #     self.y_FFT_min = self.ylim_slider.get()[0]
+        #     self.y_FFT_max = self.ylim_slider.get()[1]
+        # else:
+        #     self.x_FFT_min = np.min(self.data[:,0])
+        #     self.x_FFT_max = np.max(self.data[:,0])
+        #     self.y_FFT_min = np.min(self.data[:,1])
+        #     self.y_FFT_max = np.max(self.data[:,1])
+
+        freq = 2*np.pi*3e8/(self.data[:,0]*1e-9)
+        interp_func = interp1d(freq, self.data[:,1], kind='linear', bounds_error = False, fill_value=0)
+        freq_points = np.linspace(freq.min(),freq.max(), len(self.data[:,0]))
+        interp_spec = interp_func(freq_points)
+        Delta_w = (freq_points[1]-freq_points[0])
+        self.padding = int(self.padd_zeros_entry.get())
+        interp_spec = np.pad(interp_spec, (self.padding,self.padding))
+        freq_points = np.pad(freq_points, (self.padding,self.padding), mode='linear_ramp', end_values=(freq_points[0]-self.padding*Delta_w,freq_points[-1]+self.padding*Delta_w))
+
+        FFT_data = abs(np.fft.fft(interp_spec))
+        FFT_data = np.fft.fftshift(FFT_data)
+        FFT_freq = np.fft.fftfreq(freq_points.size, d = 1e-15*Delta_w)
+        FFT_freq = np.fft.fftshift(FFT_freq)
+        # print(np.diff(self.data[:,0])*1e-9)
+        
+        # ensure that the interpolated spectrum looks the same
+        # self.ax1.plot(2*np.pi*3e8/(freq_points*1e-9), interp_spec)
+        self.ax2 = self.fig.add_subplot(1,2,2)
+
+        self.plot_kwargs = dict(
+            linestyle = self.linestyle,
+            marker = self.markers,
+            linewidth = self.linewidth,
+            )
+
+        self.FFT_data = np.vstack((FFT_freq, FFT_data)).T
+        self.FFT_plot, = self.ax2.plot(self.FFT_data[:,0],self.FFT_data[:,1], **self.plot_kwargs)
+
+        # Determine the width of the displayed FT window
+        argmax = np.argmax(FFT_data)
+        half_width = abs(np.argmax(FFT_data) - np.argmin(abs(FFT_data-0.5*np.max(FFT_data))))
+        self.ax2.set_xlim(FFT_freq[argmax-5*half_width], FFT_freq[argmax+5*half_width])
+
+        if self.uselabels_button.get():
+            self.ax2.set_xlabel(self.ent_xlabel.get())
+
+        if self.use_fit == 1:
+            self.make_fit_plot("ax2", "FFT_data")
+            # self.create_fit_border_lines("ax2")
+        self.canvas.draw()
+        
     def save_data_file(self, data):
         file_name = customtkinter.filedialog.asksaveasfilename()
         np.savetxt(file_name, data, fmt="%.4e")
@@ -1087,7 +1184,7 @@ class FitWindow(customtkinter.CTkFrame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.app = app
-        self.row = 15
+        self.row = 20
         self.widget_dict = {}
         self.labels_title = App.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row , column=1, columnspan=5, padx=20, pady=(20, 5),sticky=None)
         self.function = {'Gaussian': gauss, 'Lorentz': lorentz, 'Linear': linear, 'Quadratic': quadratic, 'Exponential': exponential, 'Square Root': sqrt}
