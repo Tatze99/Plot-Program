@@ -341,7 +341,7 @@ class App(customtkinter.CTk):
         self.toolbar = self.create_toolbar()
         self.ymax = 0
         self.plot()
-        if ((self.uselims_button.get() and self.reset_plots and not self.lineout_button.get()) or (self.uselims_button.get() and self.image_plot != self.image_plot_prev)): 
+        if ((self.uselims_button.get() and self.reset_plots and not self.lineout_button.get() and not self.FFT_button.get()) or (self.uselims_button.get() and self.image_plot != self.image_plot_prev)): 
             # make sure the sliders are
             self.update_limits()
             xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
@@ -380,40 +380,49 @@ class App(customtkinter.CTk):
 
         # create the plot depending if we have a line or image plot
         if self.image_plot: self.make_image_plot(file_path)
-        else:               self.make_line_plot(file_path)
+        else:
+            if self.lineout_button.get():
+                self.lineout_button.toggle()
+                self.initialize_plot()
+                return
+            file_decimal = self.open_file(file_path)
+            try:
+                self.data = np.array(pd.read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
+            except: 
+                self.data = np.loadtxt(file_path)
+            self.first_plot = self.make_line_plot("data", "ax1")
         
+        self.plot_axis_parameters("ax1")
+
+        self.update_plot(None)
+        self.plot_counter += 1
+
+
+    def plot_axis_parameters(self, axis):
+        axis = getattr(self, axis)
         # if the hide_ticks option has been chosen in the multiplot, settings window
         if self.hide_ticks.get():
-            self.ax1.axes.xaxis.set_ticks([])
-            self.ax1.axes.yaxis.set_ticks([])
+            axis.axes.xaxis.set_ticks([])
+            axis.axes.yaxis.set_ticks([])
 
         if self.use_grid_lines.get():
-            self.ax1.grid(visible=True, which=self.grid_ticks, axis=self.grid_axis)
-            self.ax1.minorticks_on()
+            axis.grid(visible=True, which=self.grid_ticks, axis=self.grid_axis)
+            axis.minorticks_on()
         else:
-            self.ax1.grid(visible=False)
+            axis.grid(visible=False)
 
         # place labels only on the left and bottom plots (if there are multiplots)
         if self.uselabels_button.get() == 1:
             if self.plot_counter > self.cols*(self.rows-1): 
-                self.ax1.set_xlabel(self.ent_xlabel.get())
+                axis.set_xlabel(self.ent_xlabel.get())
             if (self.plot_counter-1) % self.cols == 0: 
-                self.ax1.set_ylabel(self.ent_ylabel.get())
+                axis.set_ylabel(self.ent_ylabel.get())
 
-        self.update_plot(None)
-        self.plot_counter += 1
         
-    def make_line_plot(self, file_path):
-        if self.lineout_button.get():
-            self.lineout_button.toggle()
-            self.initialize_plot()
-            return
-        file_decimal = self.open_file(file_path)
-        try:
-            self.data = np.array(pd.read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
-        except: 
-            self.data = np.loadtxt(file_path)
-        
+    def make_line_plot(self, dat, ax):
+        data = getattr(self,dat)
+        axis = getattr(self,ax)
+
         if len(self.data[0, :]) == 1:
             self.data = np.vstack((range(len(self.data)), self.data[:, 0])).T
         
@@ -428,24 +437,29 @@ class App(customtkinter.CTk):
             self.plot_kwargs["label"] = self.ent_legend.get()
 
         if self.uselims_button.get():
-            self.ylim_slider.set([np.min(self.data[:, 1]), max(self.ymax,np.max(self.data[:,1]))])
+            self.ylim_slider.set([np.min(data[:, 1]), max(self.ymax,np.max(data[:,1]))])
 
         if self.normalize_button.get(): self.normalize()
         ######### create the plot
-        plot = getattr(self.ax1, self.plot_type)
-        plot(self.data[:, 0], moving_average(self.data[:, 1], self.moving_average), **self.plot_kwargs)
+        plot = getattr(axis, self.plot_type)
+        plot_object, = plot(data[:, 0], moving_average(data[:, 1], self.moving_average), **self.plot_kwargs)
         #########
-        if self.uselabels_button.get() and self.ent_legend.get() != "": self.ax1.legend()
+        if self.uselabels_button.get() and self.ent_legend.get() != "": axis.legend()
 
         # create the list
         self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=self.plot_counter, pady=(0,0), padx=10)
-        self.lists["self.my_frame{}".format(self.plot_counter)] = App.create_table(self.tabview.tab("Data Table"), data=self.data, width=300, sticky='ns', row=1, column=self.plot_counter, pady=(20,10), padx=10)
+        self.lists["self.my_frame{}".format(self.plot_counter)] = App.create_table(self.tabview.tab("Data Table"), data=data, width=300, sticky='ns', row=1, column=self.plot_counter, pady=(20,10), padx=10)
         for widget_key, widget in self.lists.items():
             widget.configure(width=min(300,0.75*self.tabview.winfo_width()/(1.1*self.plot_counter+1)))
 
         # create the fit
-        if self.use_fit == 1 and not self.FFT_button.get():
-            self.make_fit_plot("ax1", "data")
+        if self.use_fit == 1 and not(self.FFT_button.get() and ax=="ax1"):
+            self.make_fit_plot(ax, dat)
+
+        if self.FFT_button.get() and ax == "ax1":
+            self.create_FFT_border_lines(ax)
+
+        return plot_object
             
 
     def make_fit_plot(self, axis, data):
@@ -453,18 +467,30 @@ class App(customtkinter.CTk):
         data = getattr(self,data)
         axis = getattr(self,axis)
 
-        self.fit_window.fit_borders_slider.configure(from_=np.min(data[:, 0]), to=np.max(data[:, 0]))  
-        if self.image_plot == self.image_plot_prev:
-            self.fit_window.fit_borders_slider.set([max(np.min(data[:,0]),self.fit_window.fit_borders_slider.get()[0]), min(np.max(data[:,0]),self.fit_window.fit_borders_slider.get()[1])])
+          
+        if self.FFT_button.get():
+            center = data[np.argmax(abs(data[:,1])), 0]
+            offset = abs(data[np.argmin(abs(data[:,1]-0.01*np.max(data[:,1]))),0]-center)
+            xmin = center-offset
+            xmax = center+offset
+            xslider_min = xmin
+            xslider_max = xmax
         else:
-            self.fit_window.fit_borders_slider.set([np.min(data[:, 0]), np.max(data[:, 0])])
+            xmin = np.min(data[:,0])
+            xmax = np.max(data[:,0])
+            if self.image_plot == self.image_plot_prev:
+                xslider_min = max(xmin,self.fit_window.fit_borders_slider.get()[0])
+                xslider_max = min(xmax,self.fit_window.fit_borders_slider.get()[1])
+            else:
+                xslider_min = xmin 
+                xslider_max = xmax
+
+        self.fit_window.fit_borders_slider.configure(from_=xmin, to=xmax)
+        self.fit_window.fit_borders_slider.set([xslider_min, xslider_max])
 
         minimum = np.argmin(abs(data[:,0] - self.fit_window.fit_borders_slider.get()[0]))
         maximum = np.argmin(abs(data[:,0] - self.fit_window.fit_borders_slider.get()[1]))
         FitWindow.set_fit_params(self.fit_window, data[minimum:maximum,:])
-
-        print(data)
-        print(self.params)
         
         self.fit_lineout, = axis.plot(data[minimum:maximum, 0], self.fit_plot(self.function, self.params, data[minimum:maximum,:]), **self.plot_kwargs)
         if self.display_fit_params_in_plot.get():
@@ -540,12 +566,18 @@ class App(customtkinter.CTk):
                     ylim_r = calc_log_value(self.y_r + 0.05 * (self.y_r - self.y_l), np.min(abs(self.data[:,1])), np.max(self.data[:,1]))
                     self.ax1.set_ylim(bottom=float(ylim_l), top=float(ylim_r))
 
+        if self.FFT_button.get():
+            try:
+                self.FFT_xmin_line.set_xdata([self.FFT_borders_slider.get()[0]])
+                self.FFT_xmax_line.set_xdata([self.FFT_borders_slider.get()[1]])
+            except:
+                self.create_FFT_border_lines("ax1")
         if self.fit_button.get():
             try:
                 self.fit_xmin_line.set_xdata([self.fit_window.fit_borders_slider.get()[0]])
                 self.fit_xmax_line.set_xdata([self.fit_window.fit_borders_slider.get()[1]])
             except:
-                if self.lineout_button.get():
+                if self.lineout_button.get() or self.FFT_button.get():
                     self.create_fit_border_lines("ax2")
                 else:
                     self.create_fit_border_lines("ax1")
@@ -556,6 +588,11 @@ class App(customtkinter.CTk):
         ax = getattr(self,axis)
         self.fit_xmin_line = ax.axvline([self.fit_window.fit_borders_slider.get()[0]], alpha = 0.4, lw=0.5)
         self.fit_xmax_line = ax.axvline([self.fit_window.fit_borders_slider.get()[1]], alpha = 0.4, lw=0.5)
+    
+    def create_FFT_border_lines(self, axis):
+        ax = getattr(self,axis)
+        self.FFT_xmin_line = ax.axvline([self.FFT_borders_slider.get()[0]], alpha = 0.4, lw=0.5)
+        self.FFT_xmax_line = ax.axvline([self.FFT_borders_slider.get()[1]], alpha = 0.4, lw=0.5)
 
     def change_plot(self, replot, direction):
         index = filelist.index(self.optmenu.get()) + direction
@@ -774,30 +811,21 @@ class App(customtkinter.CTk):
         
         self.ax2 = self.fig.add_subplot(1,2,2)
         max_value = np.max(self.data)
-
-        self.plot_kwargs = dict(
-            linestyle = self.linestyle,
-            marker = self.markers,
-            linewidth = self.linewidth,
-            )
         
         scale = 1
         if self.convert_pixels.get():
             scale = self.pixel_size
 
         self.lineout_data = np.vstack((np.arange(0,len(self.lineout_data)*scale,scale), self.lineout_data[:, 0])).T
-        self.lineout_plot, = self.ax2.plot(self.lineout_data[:,0],self.lineout_data[:,1], **self.plot_kwargs)
+        self.lineout_plot = self.make_line_plot("lineout_data", "ax2")
+        self.plot_axis_parameters("ax2")
+
         # asp = np.diff(self.ax2.get_xlim())[0] / np.diff(self.ax2.get_ylim())[0]*asp_image
         asp = np.diff(self.ax2.get_xlim())[0] / max_value*asp_image
 
-        if self.uselabels_button.get():
-            self.ax2.set_xlabel(self.ent_xlabel.get())
         self.ax2.set_aspect(abs(asp))
         self.ax2.set_ylim(0, max_value)
 
-        if self.use_fit == 1:
-            self.make_fit_plot("ax2", "lineout_data")
-            # self.create_fit_border_lines("ax2")
         self.canvas.draw()
         self.choose_ax_button.set(None)
 
@@ -828,9 +856,12 @@ class App(customtkinter.CTk):
             self.display_fit_params_in_plot.set(False)
             if self.multiplot_button.get():
                 self.multiplot_button.toggle()
+            if self.lineout_button.get():
+                self.lineout_button.toggle()
             self.replot = True
             self.one_multiplot.set(False)
             self.multiplot_button.configure(state="disabled")
+            self.lineout_button.configure(state="disabled")
             
 
             self.cols = 2
@@ -839,18 +870,23 @@ class App(customtkinter.CTk):
             row = 15
             self.FFT_title    = App.create_label( self.settings_frame,column=1, row=row, text="Fourier Transform", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
             self.padd_zeros_entry = App.create_entry(self.settings_frame, row=row+1, column=1, width=50)
+            self.test_entry = App.create_entry(self.settings_frame, row=row+2, column=1, width=50)
             self.padd_zeros_text  = App.create_label( self.settings_frame,column=0, row=row+1, text="padd 0's")
-            self.save_FFT_button = App.create_button(self.settings_frame, column = 3, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
+            self.save_FFT_button = App.create_button(self.settings_frame, column = 4, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
+            self.save_FFT_button = App.create_button(self.settings_frame, column = 2, row=row+1, text="update FFT", command= self.update_FFT, width=80, columnspan=2)
+            self.FFT_borders_slider = App.create_range_slider(self.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= lambda val=None: app.update_plot(val), row=row+2, column =2, width=120, padx=(5,5), columnspan=2, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])])
             self.padd_zeros_entry.insert(0,str(0))
+            self.test_entry.insert(0,str(0))
             self.initialize_FFT()
             # self.line_entry.bind("<KeyRelease>", lambda event, val=self.line_entry, slider_widget=self.line_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
         else:
             try:
-                for name in ["FFT_title", "padd_zeros_entry", "padd_zeros_text", "save_FFT_button"]:
+                for name in ["FFT_title", "padd_zeros_entry", "padd_zeros_text", "save_FFT_button", "FFT_borders_slider", "test_entry"]:
                     getattr(self, name).grid_remove()
             except:
                 return
             self.multiplot_button.configure(state="enabled")
+            self.lineout_button.configure(state="enabled")
             self.replot = False
             self.close_settings_window()
 
@@ -858,56 +894,42 @@ class App(customtkinter.CTk):
         self.initialize_plot()
         if self.FFT_button.get() == False: return
 
-        # if self.uselims_button.get():
-        #     self.x_FFT_min = self.xlim_slider.get()[0]
-        #     self.x_FFT_max = self.xlim_slider.get()[1]
-        #     self.y_FFT_min = self.ylim_slider.get()[0]
-        #     self.y_FFT_max = self.ylim_slider.get()[1]
-        # else:
-        #     self.x_FFT_min = np.min(self.data[:,0])
-        #     self.x_FFT_max = np.max(self.data[:,0])
-        #     self.y_FFT_min = np.min(self.data[:,1])
-        #     self.y_FFT_max = np.max(self.data[:,1])
-
-        freq = 2*np.pi*3e8/(self.data[:,0]*1e-9)
+        self.data = self.data[np.argmin(abs(self.FFT_borders_slider.get()[0]-self.data[:,0])):np.argmin(abs(self.FFT_borders_slider.get()[1]-self.data[:,0])),:]
+        freq = 3e8/(self.data[:,0]*1e-9)
         interp_func = interp1d(freq, self.data[:,1], kind='linear', bounds_error = False, fill_value=0)
         freq_points = np.linspace(freq.min(),freq.max(), len(self.data[:,0]))
         interp_spec = interp_func(freq_points)
         Delta_w = (freq_points[1]-freq_points[0])
-        self.padding = int(self.padd_zeros_entry.get())
-        interp_spec = np.pad(interp_spec, (self.padding,self.padding))
-        freq_points = np.pad(freq_points, (self.padding,self.padding), mode='linear_ramp', end_values=(freq_points[0]-self.padding*Delta_w,freq_points[-1]+self.padding*Delta_w))
+        padding = int(self.padd_zeros_entry.get())
+        interp_spec = np.pad(interp_spec, (padding,padding))
+        freq_points = np.pad(freq_points, (padding,padding), mode='linear_ramp', end_values=(freq_points[0]-padding*Delta_w,freq_points[-1]+padding*Delta_w))
 
-        FFT_data = abs(np.fft.fft(interp_spec))
+        FFT_data = abs(np.fft.fft(np.sqrt(abs(interp_spec))))**2
         FFT_data = np.fft.fftshift(FFT_data)
         FFT_freq = np.fft.fftfreq(freq_points.size, d = 1e-15*Delta_w)
         FFT_freq = np.fft.fftshift(FFT_freq)
-        # print(np.diff(self.data[:,0])*1e-9)
         
         # ensure that the interpolated spectrum looks the same
-        # self.ax1.plot(2*np.pi*3e8/(freq_points*1e-9), interp_spec)
+        # self.ax1.plot(3e8/(freq_points*1e-9), interp_spec)
         self.ax2 = self.fig.add_subplot(1,2,2)
 
-        self.plot_kwargs = dict(
-            linestyle = self.linestyle,
-            marker = self.markers,
-            linewidth = self.linewidth,
-            )
-
         self.FFT_data = np.vstack((FFT_freq, FFT_data)).T
-        self.FFT_plot, = self.ax2.plot(self.FFT_data[:,0],self.FFT_data[:,1], **self.plot_kwargs)
+        self.FFT_plot = self.make_line_plot("FFT_data", "ax2")
+        # self.FFT_plot, = self.ax2.plot(self.FFT_data[:,0],self.FFT_data[:,1], **self.plot_kwargs)
 
         # Determine the width of the displayed FT window
         argmax = np.argmax(FFT_data)
         half_width = abs(np.argmax(FFT_data) - np.argmin(abs(FFT_data-0.5*np.max(FFT_data))))
-        self.ax2.set_xlim(FFT_freq[argmax-5*half_width], FFT_freq[argmax+5*half_width])
+        self.ax2.set_xlim(FFT_freq[argmax-6*half_width], FFT_freq[argmax+6*half_width])
 
-        if self.uselabels_button.get():
-            self.ax2.set_xlabel(self.ent_xlabel.get())
-
+        self.canvas.draw()
+    
+    def update_FFT(self):
         if self.use_fit == 1:
-            self.make_fit_plot("ax2", "FFT_data")
-            # self.create_fit_border_lines("ax2")
+            minimum = np.argmin(abs(self.FFT_data[:,0] - self.fit_window.fit_borders_slider.get()[0]))
+            maximum = np.argmin(abs(self.FFT_data[:,0] - self.fit_window.fit_borders_slider.get()[1]))
+            self.fit_lineout.set_xdata(self.FFT_data[minimum:maximum,0])
+            self.fit_lineout.set_ydata(self.fit_plot(self.function, self.params, self.FFT_data[minimum:maximum,:]))
         self.canvas.draw()
         
     def save_data_file(self, data):
