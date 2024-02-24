@@ -261,10 +261,10 @@ class App(customtkinter.CTk):
         return combobox
     
     def create_slider(self, from_, to, row, column, width=200, text=None, init_value=None, command=None, columnspan=1, number_of_steps=1000, padx = 10, pady=5, sticky='w',**kwargs):
-        slider = customtkinter.CTkSlider(self, from_=from_, to=to, width=width, command=command)
+        slider = customtkinter.CTkSlider(self, from_=from_, to=to, width=width, command=command, number_of_steps=number_of_steps)
         slider.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if text is not None:
-            App.create_label(self, text=text, column=column-1, row=row, width=80, anchor='e')
+            App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e')
 
         if init_value is not None:
             slider.set(init_value)
@@ -275,7 +275,7 @@ class App(customtkinter.CTk):
         slider = CTkRangeSlider(self, from_=from_, to=to, width=width, command=command, number_of_steps=number_of_steps)
         slider.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if text is not None:
-            App.create_label(self, text=text, column=column-1, row=row, width=80, anchor='e')
+            App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e')
 
         if init_value is not None:
             slider.set(init_value)
@@ -567,11 +567,7 @@ class App(customtkinter.CTk):
                     self.ax1.set_ylim(bottom=float(ylim_l), top=float(ylim_r))
 
         if self.FFT_button.get():
-            try:
-                self.FFT_xmin_line.set_xdata([self.FFT_borders_slider.get()[0]])
-                self.FFT_xmax_line.set_xdata([self.FFT_borders_slider.get()[1]])
-            except:
-                self.create_FFT_border_lines("ax1")
+            pass
         if self.fit_button.get():
             try:
                 self.fit_xmin_line.set_xdata([self.fit_window.fit_borders_slider.get()[0]])
@@ -869,19 +865,15 @@ class App(customtkinter.CTk):
             self.settings_frame.grid()
             row = 15
             self.FFT_title    = App.create_label( self.settings_frame,column=1, row=row, text="Fourier Transform", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-            self.padd_zeros_entry = App.create_entry(self.settings_frame, row=row+1, column=1, width=50)
-            self.test_entry = App.create_entry(self.settings_frame, row=row+2, column=1, width=50)
-            self.padd_zeros_text  = App.create_label( self.settings_frame,column=0, row=row+1, text="padd 0's")
             self.save_FFT_button = App.create_button(self.settings_frame, column = 4, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
-            self.save_FFT_button = App.create_button(self.settings_frame, column = 2, row=row+1, text="update FFT", command= self.update_FFT, width=80, columnspan=2)
-            self.FFT_borders_slider = App.create_range_slider(self.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= lambda val=None: app.update_plot(val), row=row+2, column =2, width=120, padx=(5,5), columnspan=2, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])])
-            self.padd_zeros_entry.insert(0,str(0))
-            self.test_entry.insert(0,str(0))
+            self.padd_zeros_textval  = App.create_label( self.settings_frame,column=1, columnspan=3, row=row+1, text=str(0), sticky="n", anchor="n", fg_color="transparent")
+            self.settings_frame.rowconfigure(row+1, minsize=50)
+            self.padd_zeros_slider = App.create_slider(self.settings_frame, from_=0, to=10, command= self.update_FFT, row=row+1, column=1, columnspan=3, init_value=0, number_of_steps=10, width=120, text="padd 0's")
+            self.FFT_borders_slider = App.create_range_slider(self.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= self.update_FFT, row=row+2, column =1, width=120, columnspan=32, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])], text="FFT lims")
             self.initialize_FFT()
-            # self.line_entry.bind("<KeyRelease>", lambda event, val=self.line_entry, slider_widget=self.line_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
         else:
             try:
-                for name in ["FFT_title", "padd_zeros_entry", "padd_zeros_text", "save_FFT_button", "FFT_borders_slider", "test_entry"]:
+                for name in ["FFT_title", "save_FFT_button", "FFT_borders_slider", "padd_zeros_textval", "padd_zeros_slider"]:
                     getattr(self, name).grid_remove()
             except:
                 return
@@ -893,14 +885,33 @@ class App(customtkinter.CTk):
     def initialize_FFT(self):
         self.initialize_plot()
         if self.FFT_button.get() == False: return
+        
+        # ensure that the interpolated spectrum looks the same
+        # self.ax1.plot(3e8/(freq_points*1e-9), interp_spec)
+        self.ax2 = self.fig.add_subplot(1,2,2)
 
-        self.data = self.data[np.argmin(abs(self.FFT_borders_slider.get()[0]-self.data[:,0])):np.argmin(abs(self.FFT_borders_slider.get()[1]-self.data[:,0])),:]
-        freq = 3e8/(self.data[:,0]*1e-9)
-        interp_func = interp1d(freq, self.data[:,1], kind='linear', bounds_error = False, fill_value=0)
-        freq_points = np.linspace(freq.min(),freq.max(), len(self.data[:,0]))
+        self.FFT_data = self.Fourier_transform("data")
+        self.FFT_plot = self.make_line_plot("FFT_data", "ax2")
+        # self.FFT_plot, = self.ax2.plot(self.FFT_data[:,0],self.FFT_data[:,1], **self.plot_kwargs)
+
+        # Determine the width of the displayed FT window
+        argmax = np.argmax(self.FFT_data[:,1])
+        width = np.max(np.argwhere(self.FFT_data[:,1] > 1e-3*np.max(self.FFT_data[:,1]))) - argmax + int(0.01*len(self.FFT_data[:,1])/(self.padd_zeros_slider.get()+1))
+        # width = abs(np.argmax(self.FFT_data[:,1]) - np.argmin(abs(self.FFT_data[:,1]-0.5*np.max(self.FFT_data[:,1]))))
+        # self.ax2.set_xlim(self.FFT_data[argmax-10*half_width,0], self.FFT_data[argmax+10*half_width,0])
+        self.ax2.set_xlim(self.FFT_data[argmax-width, 0], self.FFT_data[argmax+width, 0])
+
+        self.canvas.draw()
+    
+    def Fourier_transform(self, dat):
+        dat = getattr(self, dat)
+        data = dat[np.argmin(abs(self.FFT_borders_slider.get()[0]-dat[:,0])):np.argmin(abs(self.FFT_borders_slider.get()[1]-dat[:,0])),:]
+        freq = 3e8/(data[:,0]*1e-9)
+        interp_func = interp1d(freq, data[:,1], kind='linear', bounds_error = False, fill_value=0)
+        freq_points = np.linspace(freq.min(),freq.max(), len(data[:,0]))
         interp_spec = interp_func(freq_points)
         Delta_w = (freq_points[1]-freq_points[0])
-        padding = int(self.padd_zeros_entry.get())
+        padding = int(self.padd_zeros_slider.get()*len(data[:,0])/2)
         interp_spec = np.pad(interp_spec, (padding,padding))
         freq_points = np.pad(freq_points, (padding,padding), mode='linear_ramp', end_values=(freq_points[0]-padding*Delta_w,freq_points[-1]+padding*Delta_w))
 
@@ -908,23 +919,20 @@ class App(customtkinter.CTk):
         FFT_data = np.fft.fftshift(FFT_data)
         FFT_freq = np.fft.fftfreq(freq_points.size, d = 1e-15*Delta_w)
         FFT_freq = np.fft.fftshift(FFT_freq)
-        
-        # ensure that the interpolated spectrum looks the same
-        # self.ax1.plot(3e8/(freq_points*1e-9), interp_spec)
-        self.ax2 = self.fig.add_subplot(1,2,2)
+        FFT_data = np.vstack((FFT_freq, FFT_data)).T
+        return FFT_data
 
-        self.FFT_data = np.vstack((FFT_freq, FFT_data)).T
-        self.FFT_plot = self.make_line_plot("FFT_data", "ax2")
-        # self.FFT_plot, = self.ax2.plot(self.FFT_data[:,0],self.FFT_data[:,1], **self.plot_kwargs)
+    def update_FFT(self, val):
+        try:
+            self.FFT_xmin_line.set_xdata([self.FFT_borders_slider.get()[0]])
+            self.FFT_xmax_line.set_xdata([self.FFT_borders_slider.get()[1]])
+        except:
+            self.create_FFT_border_lines("ax1")
 
-        # Determine the width of the displayed FT window
-        argmax = np.argmax(FFT_data)
-        half_width = abs(np.argmax(FFT_data) - np.argmin(abs(FFT_data-0.5*np.max(FFT_data))))
-        self.ax2.set_xlim(FFT_freq[argmax-6*half_width], FFT_freq[argmax+6*half_width])
-
-        self.canvas.draw()
-    
-    def update_FFT(self):
+        self.padd_zeros_textval.configure(text=str(self.padd_zeros_slider.get()))
+        self.FFT_data = self.Fourier_transform("data")
+        self.FFT_plot.set_xdata(self.FFT_data[:,0])
+        self.FFT_plot.set_ydata(self.FFT_data[:,1])
         if self.use_fit == 1:
             minimum = np.argmin(abs(self.FFT_data[:,0] - self.fit_window.fit_borders_slider.get()[0]))
             maximum = np.argmin(abs(self.FFT_data[:,0] - self.fit_window.fit_borders_slider.get()[1]))
