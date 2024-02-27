@@ -24,6 +24,7 @@ from cycler import cycler
 from scipy.optimize import curve_fit as cf
 from scipy.interpolate import interp1d
 from inspect import signature # get number of arguments of a function
+import cv2 # image fourier transform
 
 version_number = "24/02"
 plt.style.use('default')
@@ -218,7 +219,7 @@ class App(customtkinter.CTk):
         if not filelist == []: self.optmenu.set(filelist[0])
 
 
-    def create_label(self, row, column, width=20, text=None, anchor='e', sticky='e', textvariable=None, padx=(10,5), pady=None, font=None, columnspan=1, fg_color=None, **kwargs):
+    def create_label(self, row, column, width=20, text=None, anchor='e', sticky='e', textvariable=None, padx=(5,5), pady=None, font=None, columnspan=1, fg_color=None, **kwargs):
         label = customtkinter.CTkLabel(self, text=text, textvariable=textvariable, width=width, anchor=anchor, font=font, fg_color=fg_color,  **kwargs)
         label.grid(row=row, column=column, sticky=sticky, columnspan=columnspan, padx=padx, pady=pady, **kwargs)
         return label
@@ -497,7 +498,13 @@ class App(customtkinter.CTk):
             axis.text(0.05, 0.9, FitWindow.get_fitted_labels(self.fit_window), ha='left', va='top', transform=axis.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'), size=8)
 
     def make_image_plot(self, file_path):
-        self.data = plt.imread(file_path)
+        self.data = cv2.imread(file_path)[...,::-1] # read the image as RGB
+
+        # determine if the image is gray
+        if self.data.shape[2] == 3:
+            b,g,r = self.data[:,:,0], self.data[:,:,1], self.data[:,:,2]
+            if (b==g).all() and (b==r).all():
+                self.data = self.data[:,:,0]
 
         # create dictionary of the plot key word arguments
         self.plot_kwargs = dict(
@@ -845,8 +852,8 @@ class App(customtkinter.CTk):
         self.canvas.draw()
 
     def fourier_trafo(self):
-        if self.image_plot == True:
-            self.FFT_button.deselect()
+        # if self.image_plot == True:
+        #     self.FFT_button.deselect()
 
         if self.FFT_button.get():
             self.display_fit_params_in_plot.set(False)
@@ -865,11 +872,11 @@ class App(customtkinter.CTk):
             self.settings_frame.grid()
             row = 15
             self.FFT_title    = App.create_label( self.settings_frame,column=1, row=row, text="Fourier Transform", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-            self.save_FFT_button = App.create_button(self.settings_frame, column = 4, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
-            self.padd_zeros_textval  = App.create_label( self.settings_frame,column=1, columnspan=3, row=row+1, text=str(0), sticky="n", anchor="n", fg_color="transparent")
+            self.save_FFT_button = App.create_button(self.settings_frame, column = 3, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
+            self.padd_zeros_textval  = App.create_label( self.settings_frame,column=1, columnspan=2, row=row+1, text=str(0), sticky="n", anchor="n", fg_color="transparent")
             self.settings_frame.rowconfigure(row+1, minsize=50)
-            self.padd_zeros_slider = App.create_slider(self.settings_frame, from_=0, to=10, command= self.update_FFT, row=row+1, column=1, columnspan=3, init_value=0, number_of_steps=10, width=120, text="padd 0's")
-            self.FFT_borders_slider = App.create_range_slider(self.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= self.update_FFT, row=row+2, column =1, width=120, columnspan=32, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])], text="FFT lims")
+            self.padd_zeros_slider = App.create_slider(self.settings_frame, from_=0, to=10, command= self.update_FFT, row=row+1, column=1, columnspan=2, init_value=0, number_of_steps=10, width=120, text="padd 0's", padx=(10,0))
+            self.FFT_borders_slider = App.create_range_slider(self.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= self.update_FFT, row=row+2, column =1, width=120, columnspan=2, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])], text="FFT lims", padx=(10,0))
             self.initialize_FFT()
         else:
             try:
@@ -963,7 +970,7 @@ class App(customtkinter.CTk):
     
     def normalize(self):
         if self.image_plot:
-            self.data[:,:] *= 0.5/np.mean(self.data)*self.enhance_value
+            self.data = self.data * 0.5/np.mean(self.data)*self.enhance_value
             self.data[self.data>1] = 1
         elif self.change_norm_to_area.get() == False:
             self.data[:, 1] /= np.max(self.data[:, 1])
