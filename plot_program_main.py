@@ -25,6 +25,7 @@ from scipy.optimize import curve_fit as cf
 from scipy.interpolate import interp1d
 from inspect import signature # get number of arguments of a function
 import cv2 # image fourier transform
+from PIL import Image, ImageTk
 
 version_number = "24/02"
 plt.style.use('default')
@@ -104,6 +105,7 @@ class App(customtkinter.CTk):
         self.title("Graph interactive editor for smooth visualization GIES v."+version_number)
         self.geometry("1280x720")
         self.replot = False
+        self.initialize_ui_images()
         self.initialize_ui()
         self.initialize_plot_has_been_called = False
         self.folder_path.insert(0, Standard_path)
@@ -113,6 +115,15 @@ class App(customtkinter.CTk):
         self.reset_button.grid_remove()
         self.initialize_variables()
         
+    def initialize_ui_images(self):
+        # self.img_settings = ImageTk.PhotoImage(
+        #         Image.open(os.path.join(Standard_path,"ui_images","options.png")).resize((12, 12)),
+        #         Image.Resampling.LANCZOS,
+        #     )
+        
+        self.img_settings = customtkinter.CTkImage(dark_image=Image.open(os.path.join(Standard_path,"ui_images","options.png")), size=(15, 15))
+        self.img_save = customtkinter.CTkImage(dark_image=Image.open(os.path.join(Standard_path,"ui_images","save_white.png")), size=(15, 15))
+        self.img_folder = customtkinter.CTkImage(dark_image=Image.open(os.path.join(Standard_path,"ui_images","folder.png")), size=(15, 15))
         
     def initialize_variables(self):
         self.ymax = 0
@@ -185,9 +196,9 @@ class App(customtkinter.CTk):
         self.plot_button    = App.create_button(frame, text="Reset graph",             command=self.initialize, column=0, row=5, pady=(15,5))
         self.reset_button   = App.create_button(frame, text="Reset",                  command=self.initialize_plot, column=0, row=5, width=90, padx = (10,120), pady=(15,5))   # Multiplot button
         self.addplot_button = App.create_button(frame, text="Multiplot",              command=self.plot,            column=0, row=5, width=90, padx = (120,10), pady=(15,5))   # Multiplot button
-        self.load_button    = App.create_button(frame, text="\U0001F4C1 Load Folder", command=self.read_file_list,  column=0, row=1)
-        self.save_button    = App.create_button(frame, text="\U0001F4BE Save Figure", command=self.save_figure,     column=0, row=3)
-        self.set_button     = App.create_button(frame, text="Plot settings",          command=lambda: self.open_toplevel(SettingsWindow), column=0, row=4)
+        self.load_button    = App.create_button(frame, text="Load Folder", command=self.read_file_list,  column=0, row=1, image=self.img_folder)
+        self.save_button    = App.create_button(frame, text="Save Figure", command=self.save_figure,     column=0, row=3,  image=self.img_save)
+        self.set_button     = App.create_button(frame, text="Plot settings",          command=lambda: self.open_toplevel(SettingsWindow), column=0, row=4, image=self.img_settings)
         self.prev_button    = App.create_button(frame, text="<<",                     command=lambda: self.change_plot(self.replot,-1), column=0, row=6, width=90, padx = (10,120))
         self.next_button    = App.create_button(frame, text=">>",                     command=lambda: self.change_plot(self.replot,1), column=0, row=6, width=90, padx = (120,10))
         
@@ -231,8 +242,8 @@ class App(customtkinter.CTk):
             App.create_label(self, text=text, column=column-1, row=row, width=80, anchor='e')
         return entry
 
-    def create_button(self, text, command, row, column, width=200, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
-        button = customtkinter.CTkButton(self, text=text, command=command, width=width, **kwargs)
+    def create_button(self, text, command, row, column, image=None, width=200, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
+        button = customtkinter.CTkButton(self, text=text, command=command, width=width, image=image, **kwargs)
         button.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         return button
     
@@ -498,14 +509,17 @@ class App(customtkinter.CTk):
             axis.text(0.05, 0.9, FitWindow.get_fitted_labels(self.fit_window), ha='left', va='top', transform=axis.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'), size=8)
 
     def make_image_plot(self, file_path):
-        self.data = cv2.imread(file_path)[...,::-1] # read the image as RGB
+        print(file_path)
+        self.data = cv2.imdecode(np.fromfile(file_path, np.uint8), cv2.IMREAD_UNCHANGED)
+        print(self.data.shape)
+        # if the image has color channels, make sure they have the right order, if all channels are the same, reduce it to one channel
+        if len(self.data.shape) == 3:
+            self.data = cv2.cvtColor(self.data, cv2.COLOR_BGR2RGB)
 
-        # determine if the image is gray
-        if self.data.shape[2] == 3:
             b,g,r = self.data[:,:,0], self.data[:,:,1], self.data[:,:,2]
             if (b==g).all() and (b==r).all():
-                self.data = self.data[:,:,0]
-
+                self.data = self.data[...,0]
+        print(self.data.shape)
         # create dictionary of the plot key word arguments
         self.plot_kwargs = dict(
             cmap = self.cmap_imshow,
@@ -1098,7 +1112,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.aspect             = App.create_optionMenu(self, column=1, row=3, columnspan=2, values=self.aspect_values, text="Aspect",  command=self.set_plot_settings)
         self.cmap_imshow_list   = App.create_optionMenu(self, column=1, row=4, columnspan=2, values=self.cmap_imshow,                text="Colormap",command=self.set_plot_settings)
         self.enhance_slider     = App.create_slider(  self, column=1, row=5, columnspan=2, init_value=1, from_=0.1, to=2, 
-                                                    command= lambda value, var="enhance_var": self.update_slider_value(value, var), text="Enhance value", number_of_steps=10)
+                                                    command= lambda value, var="enhance_var": self.update_slider_value(value, var), text="Enhance value", number_of_steps=100)
 
         # values for line plots
         self.plot_type_list     = App.create_optionMenu(self, column=1, row=7, columnspan=2, values=list(self.plot_type.keys()),text="Plot type",command=self.set_plot_settings)
@@ -1109,7 +1123,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.grid_axis_list     = App.create_optionMenu(self, column=2, row=11, width=90, values=self.grid_axis, command=self.set_plot_settings)
         self.moving_av_list     = App.create_optionMenu(self, column=1, row=12, columnspan=2, values=self.moving_average,      text="Average",   command=self.set_plot_settings)
         self.linewidth_slider   = App.create_slider(  self,  column=1, row=13, columnspan=2, init_value=1, from_=0.1, to=2, 
-                                                    command= lambda value, var="lw_var": self.update_slider_value(value, var), text="line width", number_of_steps=10)
+                                                    command= lambda value, var="lw_var": self.update_slider_value(value, var), text="line width", number_of_steps=100)
 
         self.reset_button           = App.create_button(self, column=4, row=0, text="Reset Settings",   command=self.reset_values, width=130, pady=(20,5))
         self.scale_switch_button    = App.create_switch(self, column=4, row=1, text="Use Scalebar",     command=lambda: self.toggle_boolean(self.app.use_scalebar))

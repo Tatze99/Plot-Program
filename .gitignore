@@ -4,3 +4,5 @@ untitled1.py
 *old.py
 *.pyc
 *.dat
+
+!ui_images/**
