@@ -6,7 +6,6 @@ Created on Sun Sep 18 14:28:26 2022
 
 to do: implement minor ticks as option
 """
-# import tkinter
 import os
 from CTkRangeSlider import *
 import customtkinter
@@ -18,14 +17,14 @@ from matplotlib_scalebar.scalebar import ScaleBar
 # from matplotlib.figure import Figure
 import ctypes
 # import io
-import pandas as pd
+from pandas import read_table
 import matplotlib
 from cycler import cycler
 from scipy.optimize import curve_fit as cf
 from scipy.interpolate import interp1d
 from inspect import signature # get number of arguments of a function
 import cv2 # image fourier transform
-from PIL import Image, ImageTk
+from PIL import Image
 
 version_number = "24/02"
 plt.style.use('default')
@@ -116,11 +115,6 @@ class App(customtkinter.CTk):
         self.initialize_variables()
         
     def initialize_ui_images(self):
-        # self.img_settings = ImageTk.PhotoImage(
-        #         Image.open(os.path.join(Standard_path,"ui_images","options.png")).resize((12, 12)),
-        #         Image.Resampling.LANCZOS,
-        #     )
-        
         self.img_settings = customtkinter.CTkImage(dark_image=Image.open(os.path.join(Standard_path,"ui_images","options.png")), size=(15, 15))
         self.img_save = customtkinter.CTkImage(dark_image=Image.open(os.path.join(Standard_path,"ui_images","save_white.png")), size=(15, 15))
         self.img_folder = customtkinter.CTkImage(dark_image=Image.open(os.path.join(Standard_path,"ui_images","folder.png")), size=(15, 15))
@@ -399,7 +393,7 @@ class App(customtkinter.CTk):
                 return
             file_decimal = self.open_file(file_path)
             try:
-                self.data = np.array(pd.read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
+                self.data = np.array(read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
             except: 
                 self.data = np.loadtxt(file_path)
             self.first_plot = self.make_line_plot("data", "ax1")
