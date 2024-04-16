@@ -125,6 +125,15 @@ class App(customtkinter.CTk):
         self.plot_counter = 1
         self.color = "#1a1a1a" # toolbar
         self.reset_plots = True
+        self.reset_xlims = True
+        self.legend_type = {'Best location': {'loc': 'best'}, 
+                            'Upper right': {'loc': 'upper right'}, 
+                            'Upper left': {'loc': 'upper left'},
+                            'Lower left': {'loc': 'lower left'},
+                            'Lower right': {'loc': 'lower right'}, 
+                            'Outer right ↑': {'loc': 'upper left', 'bbox_to_anchor': (1,1)}, 
+                            'Outer right ↓': {'loc': 'lower left', 'bbox_to_anchor': (1,0)}
+                            }
 
         # line plot settings
         self.linestyle='-'
@@ -161,7 +170,6 @@ class App(customtkinter.CTk):
         self.use_scalebar = customtkinter.BooleanVar(value=False)
         self.use_colorbar = customtkinter.BooleanVar(value=False)
         self.convert_pixels = customtkinter.BooleanVar(value=False)
-        self.one_multiplot = customtkinter.BooleanVar(value=True)
         self.rows = 1
         self.cols = 1
         
@@ -352,8 +360,11 @@ class App(customtkinter.CTk):
             self.update_limits()
             xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
 
-            self.xlim_slider.set([xlim_min, xlim_max])
+            if self.reset_xlims:
+                self.xlim_slider.set([xlim_min, xlim_max])
+            else: self.reset_xlims = True
             self.ylim_slider.set([ylim_min, ylim_max])
+            
 
             self.update_plot("Update Limits")
         
@@ -364,7 +375,6 @@ class App(customtkinter.CTk):
         self.image_plot_prev = self.image_plot
         if (".png" in file_path or ".jpg" in file_path):
             self.image_plot = True 
-            self.one_multiplot.set(False)
             try: 
                 self.switch_multiplt.deselect()
                 self.switch_multiplt.configure(state="disabled")
@@ -376,11 +386,11 @@ class App(customtkinter.CTk):
             except: pass
 
         # multiplots but in several subplots
-        if self.replot and not self.one_multiplot.get():
+        if self.replot and (self.rows != 1 or self.cols != 1):
             if self.plot_counter > self.rows*self.cols: return
             self.ax1 = self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter)
         # multiplot but same axis, no image plot!
-        elif (self.replot and self.one_multiplot.get() and not self.image_plot and self.plot_counter == 1) or not self.replot:
+        elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter == 1) or not self.replot:
             self.ax1 = self.fig.add_subplot(1,1,1)
             self.ax1.set_prop_cycle(cycler(color=plt.get_cmap(self.cmap).colors))
 
@@ -453,7 +463,7 @@ class App(customtkinter.CTk):
         plot = getattr(axis, self.plot_type)
         plot_object, = plot(data[:, 0], moving_average(data[:, 1], self.moving_average), **self.plot_kwargs)
         #########
-        if self.uselabels_button.get() and self.ent_legend.get() != "": axis.legend()
+        if self.uselabels_button.get() and self.ent_legend.get() != "": axis.legend(**self.legend_type[self.legend_type_list.get()])
 
         # create the list
         self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=self.plot_counter, pady=(0,0), padx=10)
@@ -506,8 +516,10 @@ class App(customtkinter.CTk):
             axis.text(0.05, 0.9, FitWindow.get_fitted_labels(self.fit_window), ha='left', va='top', transform=axis.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'), size=8)
 
     def make_image_plot(self, file_path):
+        if self.image_plot != self.image_plot_prev and self.rows == 1 and self.cols == 1:
+            return
+
         self.data = cv2.imdecode(np.fromfile(file_path, np.uint8), cv2.IMREAD_UNCHANGED)
-        print(self.data.shape)
         # if the image has color channels, make sure they have the right order, if all channels are the same, reduce it to one channel
         if len(self.data.shape) == 3:
             self.data = cv2.cvtColor(self.data, cv2.COLOR_BGR2RGB)
@@ -645,7 +657,7 @@ class App(customtkinter.CTk):
         if self.uselims_button.get() == 1:
             row = 4 # 4 from the use_labels
             self.settings_frame.grid()
-            self.limits_title = App.create_label(self.settings_frame, text="Limits", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=1, columnspan=5, padx=20, pady=(20, 5),sticky=None)
+            self.limits_title = App.create_label(self.settings_frame, text="Limits", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
             self.labx = App.create_label(self.settings_frame, text="x limit", column=0, row=row+1)
             self.laby = App.create_label(self.settings_frame, text="y limit", column=0, row=row+2)
 
@@ -703,12 +715,13 @@ class App(customtkinter.CTk):
         if self.uselabels_button.get() == 1:
             row = 0
             self.settings_frame.grid()
-            self.labels_title = App.create_label(self.settings_frame, text="Labels", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=1, columnspan=5, padx=20, pady=(20, 5),sticky=None)
+            self.labels_title = App.create_label(self.settings_frame, text="Labels", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
             self.ent_xlabel      = App.create_entry(self.settings_frame,column=1, row=row+1, columnspan=2, width=110, placeholder_text="x label")
             self.ent_ylabel      = App.create_entry(self.settings_frame,column=3, row=row+1, columnspan=2, width=110, placeholder_text="y label")
-            self.ent_legend      = App.create_entry(self.settings_frame,column=1, row=row+2, columnspan=4, width=240)
+            self.ent_legend      = App.create_entry(self.settings_frame,column=1, row=row+2, columnspan=4, width=110)
             self.ent_label_text = App.create_label(self.settings_frame,column=0, row=row+1, text="x / y")
             self.ent_legend_text = App.create_label(self.settings_frame,column=0, row=row+2, text="legend")
+            self.legend_type_list     = App.create_optionMenu(self.settings_frame, column=3, row=row+2, columnspan=2, values=list(self.legend_type.keys()), width=110)
         else:
             for name in ["ent_xlabel","ent_label_text","ent_ylabel","ent_legend","ent_legend_text","labels_title"]:
                 getattr(self, name).grid_remove()
@@ -724,13 +737,11 @@ class App(customtkinter.CTk):
             self.cols = 2
 
             row = 9
-            self.multiplot_title = App.create_label( self.settings_frame,column=1, row=row, text="Multiplot Grid", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-            self.ent_rows        = App.create_entry( self.settings_frame,column=1, row=row+1, width=50, padx=(5,40),columnspan=2)
+            self.multiplot_title = App.create_label( self.settings_frame,column=0, row=row, text="Multiplot Grid", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
+            self.ent_rows        = App.create_entry( self.settings_frame,column=1, row=row+1, width=50)
             self.ent_rows_text   = App.create_label( self.settings_frame,column=0, row=row+1, text="rows")
-            self.ent_cols        = App.create_entry( self.settings_frame,column=1, row=row+2, width=50, padx=(5,40),columnspan=2)
-            self.ent_cols_text   = App.create_label( self.settings_frame,column=0, row=row+2, text="cols")
-            self.switch_ticks    = App.create_switch(self.settings_frame,column=3, row=row+1, text="hide ticks",  command = lambda: self.toggle_boolean(self.hide_ticks), padx=(5,20), columnspan=2, sticky="w")
-            self.switch_multiplt = App.create_switch(self.settings_frame,column=3, row=row+2, text="1 multiplot", command = lambda: self.toggle_boolean(self.one_multiplot), padx=(5,20), columnspan=2, sticky="w")
+            self.ent_cols        = App.create_entry( self.settings_frame,column=3, row=row+1, width=50)
+            self.ent_cols_text   = App.create_label( self.settings_frame,column=2, row=row+1, text="columns")
             self.settings_frame.grid()
             self.addplot_button.grid() 
             self.reset_button.grid()
@@ -738,11 +749,9 @@ class App(customtkinter.CTk):
 
             self.ent_rows.insert(0,str(self.rows))
             self.ent_cols.insert(0,str(self.cols))
-            if self.one_multiplot.get(): self.switch_multiplt.select()
-            if self.hide_ticks.get(): self.switch_ticks.select()
         else:
             self.plot_button.grid()
-            for name in ["ent_rows","ent_rows_text","ent_cols","ent_cols_text","reset_button","addplot_button","multiplot_title","switch_ticks", "switch_multiplt"]:
+            for name in ["ent_rows","ent_rows_text","ent_cols","ent_cols_text","reset_button","addplot_button","multiplot_title", "switch_multiplt"]:
                 getattr(self, name).grid_remove()
             self.close_settings_window()
             # reset number of rows and cols for plotting to single plot value
@@ -767,7 +776,7 @@ class App(customtkinter.CTk):
             self.lineout_xy = " x-line "
             self.settings_frame.grid()
             row = 12
-            self.lineout_title    = App.create_label( self.settings_frame,column=1, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
+            self.lineout_title    = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
             self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+2, values=[" x-line ", " y-line "], command=self.initialize_lineout, columnspan=2, padx=(10,10), sticky="w")
             self.line_entry       = App.create_entry(self.settings_frame, row=row+1, column=1, width=50)
             self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=max(len(self.data[:,0]), len(self.data[0,:])), command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=170, padx=(0,10), columnspan=3)
@@ -863,8 +872,8 @@ class App(customtkinter.CTk):
         self.canvas.draw()
 
     def fourier_trafo(self):
-        # if self.image_plot == True:
-        #     self.FFT_button.deselect()
+        if self.image_plot == True:
+            self.FFT_button.deselect()
 
         if self.FFT_button.get():
             self.display_fit_params_in_plot.set(False)
@@ -873,7 +882,6 @@ class App(customtkinter.CTk):
             if self.lineout_button.get():
                 self.lineout_button.toggle()
             self.replot = True
-            self.one_multiplot.set(False)
             self.multiplot_button.configure(state="disabled")
             self.lineout_button.configure(state="disabled")
             
@@ -882,7 +890,7 @@ class App(customtkinter.CTk):
             self.rows = 1
             self.settings_frame.grid()
             row = 15
-            self.FFT_title    = App.create_label( self.settings_frame,column=1, row=row, text="Fourier Transform", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
+            self.FFT_title    = App.create_label( self.settings_frame,column=0, row=row, text="Fourier Transform", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
             self.save_FFT_button = App.create_button(self.settings_frame, column = 3, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
             self.padd_zeros_textval  = App.create_label( self.settings_frame,column=1, columnspan=2, row=row+1, text=str(0), sticky="n", anchor="n", fg_color="transparent")
             self.settings_frame.rowconfigure(row+1, minsize=50)
@@ -972,10 +980,11 @@ class App(customtkinter.CTk):
 
         
     def normalize_setup(self):
-        if self.normalize_button.get():
-            if self.uselims_button.get() and not self.image_plot:
-                self.update_limits()
-                self.ylim_slider.set([np.min(self.data[:, 1]),np.max(self.data[:, 1])])
+        # if self.normalize_button.get():
+        #     if self.uselims_button.get() and not self.image_plot:
+        #         self.update_limits()
+                # self.ylim_slider.set([np.min(self.data[:, 1]),self.ymax])
+        self.reset_xlims = False        
         self.initialize()
         
     
@@ -1129,7 +1138,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.save_plain_img_button  = App.create_switch(self, column=4, row=4, text="Save plain images",command=lambda: self.toggle_boolean(self.app.save_plain_image))
         self.hide_params_button     = App.create_switch(self, column=4, row=5, text="Hide fit params",  command=lambda: self.toggle_boolean(self.app.display_fit_params_in_plot))
         self.norm_switch_button     = App.create_switch(self, column=4, row=6, text="Normalize 'Area'", command=lambda: self.toggle_boolean(self.app.change_norm_to_area))
-        self.grid_lines_button     = App.create_switch(self, column=4, row=7, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
+        self.grid_lines_button      = App.create_switch(self, column=4, row=7, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
+        self.hide_ticks_button      = App.create_switch(self, column=4, row=8, text="hide ticks",       command=lambda: self.toggle_boolean(self.app.hide_ticks))
         
         # Slider labels    
         self.enhance_var = customtkinter.StringVar()  # StringVar to hold the label value
@@ -1168,6 +1178,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         if self.app.change_norm_to_area.get() == True: self.norm_switch_button.select()
         if self.app.save_plain_image.get(): self.save_plain_img_button.select()
         if self.app.use_grid_lines.get(): self.grid_lines_button.select()
+        if self.app.hide_ticks.get(): self.hide_ticks.select()
 
     # reset to defaul values
     def reset_values(self):
