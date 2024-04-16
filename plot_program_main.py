@@ -26,7 +26,7 @@ from inspect import signature # get number of arguments of a function
 import cv2 # image fourier transform
 from PIL import Image
 
-version_number = "24/02"
+version_number = "24/04"
 plt.style.use('default')
 matplotlib.rc('font', family='serif')
 matplotlib.rc('font', serif='Times New Roman')
@@ -34,7 +34,7 @@ matplotlib.rc('font', serif='Times New Roman')
 ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
 Standard_path = os.path.dirname(os.path.abspath(__file__))
-filelist = [fname for fname in os.listdir(Standard_path) if fname.endswith(('.csv', '.dat', '.txt', '.png', '.jpg'))]
+filelist = [fname for fname in os.listdir(Standard_path) if fname.endswith(('.csv', '.dat', '.txt', '.png', '.jpg', '.spec'))]
 
 def exponential(x, a, b, c):
     return a * np.exp(b * x) + c
@@ -394,7 +394,9 @@ class App(customtkinter.CTk):
             file_decimal = self.open_file(file_path)
             try:
                 self.data = np.array(read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
+                print("pandas")
             except: 
+                print("numpy")
                 self.data = np.loadtxt(file_path)
             self.first_plot = self.make_line_plot("data", "ax1")
         
@@ -447,6 +449,7 @@ class App(customtkinter.CTk):
 
         if self.normalize_button.get(): self.normalize()
         ######### create the plot
+        print(data)
         plot = getattr(axis, self.plot_type)
         plot_object, = plot(data[:, 0], moving_average(data[:, 1], self.moving_average), **self.plot_kwargs)
         #########
@@ -503,7 +506,6 @@ class App(customtkinter.CTk):
             axis.text(0.05, 0.9, FitWindow.get_fitted_labels(self.fit_window), ha='left', va='top', transform=axis.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'), size=8)
 
     def make_image_plot(self, file_path):
-        print(file_path)
         self.data = cv2.imdecode(np.fromfile(file_path, np.uint8), cv2.IMREAD_UNCHANGED)
         print(self.data.shape)
         # if the image has color channels, make sure they have the right order, if all channels are the same, reduce it to one channel
@@ -623,11 +625,12 @@ class App(customtkinter.CTk):
         return function(data[:,0], *params)
         
     def read_file_list(self):
-        path = customtkinter.filedialog.askdirectory(initialdir=Standard_path)
-        self.folder_path.delete(0, customtkinter.END)
-        self.folder_path.insert(0, path)
+        path = customtkinter.filedialog.askdirectory(initialdir=self.folder_path)
+        if path != "":
+            self.folder_path.delete(0, customtkinter.END)
+            self.folder_path.insert(0, path)
         global filelist
-        filelist = [fname for fname in os.listdir(self.folder_path.get()) if fname.endswith(('.csv', '.dat', '.txt', '.png', '.jpg'))]
+        filelist = [fname for fname in os.listdir(self.folder_path.get()) if fname.endswith(('.csv', '.dat', '.txt', '.png', '.jpg', '.spec'))]
         self.optmenu.configure(values=filelist)
         self.optmenu.set(filelist[0])
 
