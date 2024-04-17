@@ -126,14 +126,8 @@ class App(customtkinter.CTk):
         self.color = "#1a1a1a" # toolbar
         self.reset_plots = True
         self.reset_xlims = True
-        self.legend_type = {'Best location': {'loc': 'best'}, 
-                            'Upper right': {'loc': 'upper right'}, 
-                            'Upper left': {'loc': 'upper left'},
-                            'Lower left': {'loc': 'lower left'},
-                            'Lower right': {'loc': 'lower right'}, 
-                            'Outer right ↑': {'loc': 'upper left', 'bbox_to_anchor': (1,1)}, 
-                            'Outer right ↓': {'loc': 'lower left', 'bbox_to_anchor': (1,0)}
-                            }
+        self.legend_type = {'loc': 'best'}
+        self.legend_name = None
 
         # line plot settings
         self.linestyle='-'
@@ -200,7 +194,7 @@ class App(customtkinter.CTk):
         self.addplot_button = App.create_button(frame, text="Multiplot",              command=self.plot,            column=0, row=5, width=90, padx = (120,10), pady=(15,5))   # Multiplot button
         self.load_button    = App.create_button(frame, text="Load Folder", command=self.read_file_list,  column=0, row=1, image=self.img_folder)
         self.save_button    = App.create_button(frame, text="Save Figure", command=self.save_figure,     column=0, row=3,  image=self.img_save)
-        self.set_button     = App.create_button(frame, text="Plot settings",          command=lambda: self.open_toplevel(SettingsWindow), column=0, row=4, image=self.img_settings)
+        self.set_button     = App.create_button(frame, text="Plot settings",          command=lambda: self.open_toplevel(SettingsWindow, "Settings"), column=0, row=4, image=self.img_settings)
         self.prev_button    = App.create_button(frame, text="<<",                     command=lambda: self.change_plot(self.replot,-1), column=0, row=6, width=90, padx = (10,120))
         self.next_button    = App.create_button(frame, text=">>",                     command=lambda: self.change_plot(self.replot,1), column=0, row=6, width=90, padx = (120,10))
         
@@ -453,6 +447,9 @@ class App(customtkinter.CTk):
         
         if self.uselabels_button.get(): 
             self.plot_kwargs["label"] = self.ent_legend.get()
+            if self.legend_name is not None:
+                self.plot_kwargs["label"] += self.optmenu.get()[self.legend_name]
+                print(self.plot_kwargs["label"])
 
         if self.uselims_button.get():
             self.ylim_slider.set([np.min(data[:, 1]), max(self.ymax,np.max(data[:,1]))])
@@ -463,7 +460,9 @@ class App(customtkinter.CTk):
         plot = getattr(axis, self.plot_type)
         plot_object, = plot(data[:, 0], moving_average(data[:, 1], self.moving_average), **self.plot_kwargs)
         #########
-        if self.uselabels_button.get() and self.ent_legend.get() != "": axis.legend(**self.legend_type[self.legend_type_list.get()])
+        if self.uselabels_button.get():
+            if self.ent_legend.get() != "" or self.legend_name is not None: 
+                axis.legend(**self.legend_type)
 
         # create the list
         self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=self.plot_counter, pady=(0,0), padx=10)
@@ -545,8 +544,8 @@ class App(customtkinter.CTk):
         plot = self.ax1.imshow(self.data, **self.plot_kwargs)
         #########
         # use axis labels and add a legend
-        if self.uselabels_button.get() and self.ent_legend.get() != "": 
-            self.ax1.text(0.95, 0.95, self.ent_legend.get(), ha='right', va='top', transform=self.ax1.transAxes, bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'))
+        if self.uselabels_button.get() and self.ent_legend.get() != "":
+            self.ax1.legend(labels=[self.ent_legend.get()], handles=[self.ax1.plot([],[])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, **self.legend_type)
 
         # use a scalebar on the bottom right corner
         if self.use_scalebar.get():
@@ -721,7 +720,8 @@ class App(customtkinter.CTk):
             self.ent_legend      = App.create_entry(self.settings_frame,column=1, row=row+2, columnspan=4, width=110)
             self.ent_label_text = App.create_label(self.settings_frame,column=0, row=row+1, text="x / y")
             self.ent_legend_text = App.create_label(self.settings_frame,column=0, row=row+2, text="legend")
-            self.legend_type_list     = App.create_optionMenu(self.settings_frame, column=3, row=row+2, columnspan=2, values=list(self.legend_type.keys()), width=110)
+            self.legend_settings_button = App.create_button(self.settings_frame, text="Settings", command=lambda: self.open_toplevel(LegendWindow, "Legend"), column=3, row=row+2, columnspan=2, image=self.img_settings, width=110)
+            # self.legend_type_list     = App.create_optionMenu(self.settings_frame, column=3, row=row+2, columnspan=2, values=list(self.legend_type.keys()), width=110)
         else:
             for name in ["ent_xlabel","ent_label_text","ent_ylabel","ent_legend","ent_legend_text","labels_title"]:
                 getattr(self, name).grid_remove()
@@ -1063,12 +1063,13 @@ class App(customtkinter.CTk):
         if not (self.uselabels_button.get() or self.uselims_button.get() or self.fit_button.get() or self.multiplot_button.get() or self.lineout_button.get()):
             self.settings_frame.grid_remove()
             
-    def open_toplevel(self,cls):
-        if self.toplevel_window is None or not self.toplevel_window.winfo_exists():
-            self.toplevel_window = cls(self)  # create window if its None or destroyed
-            self.toplevel_window.focus()  # focus it
+    def open_toplevel(self,cls,toplevel_name):
+        name = getattr(self, toplevel_name, None)
+        if name is None or not self.toplevel_window.winfo_exists():
+            name = cls(self)  # create window if its None or destroyed
+            name.focus()  # focus it
         else:
-            self.toplevel_window.focus()  # if window exists focus it
+            name.focus()  # if window exists focus it
             
     def open_widget(self,cls):
         if self.fit_button.get() == 1:
@@ -1094,7 +1095,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.geometry("600x550")
-        self.title("Settings")
+        self.title("Plot Settings")
         self.app = app
 
         # values for image plots
@@ -1229,6 +1230,71 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app.grid_ticks = self.grid_lines_list.get()
         self.app.grid_axis = self.grid_axis_list.get()
         self.app.plot_type=self.plot_type[self.plot_type_list.get()]
+
+    def toggle_boolean(self, boolean):
+        boolean.set(not boolean.get())
+
+
+"""
+############################################################################################
+##############################     Legend Window     #######################################
+############################################################################################
+
+"""
+
+class LegendWindow(customtkinter.CTkToplevel):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.geometry("600x550")
+        self.title("Legend Settings")
+        self.app = app
+        self.legend_type = {'Best location': {'loc': 'best'}, 
+                            'Upper right': {'loc': 'upper right'}, 
+                            'Upper left': {'loc': 'upper left'},
+                            'Lower left': {'loc': 'lower left'},
+                            'Lower right': {'loc': 'lower right'}, 
+                            'Outer right ↑': {'loc': 'upper left', 'bbox_to_anchor': (1,1)}, 
+                            'Outer right ↓': {'loc': 'lower left', 'bbox_to_anchor': (1,0)}
+                            }
+        
+        self.legend_name = {'Empty': None, 
+                            'Full_name': slice(0,None), 
+                            'Remove file type': slice(0,-4),
+                            'Remove date': slice(6,None),
+                            }
+
+        App.create_label(self, column=1, row=0, columnspan=2, text="Image plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
+
+        # values for line plots
+        self.legend_type_list   = App.create_optionMenu(self, column=1, row=3, columnspan=2, values=list(self.legend_type.keys()), text="Legend location", command=self.set_plot_settings)
+        self.legend_name_list   = App.create_optionMenu(self, column=1, row=4, columnspan=2, values=list(self.legend_name.keys()), text="Legend name", command=self.set_plot_settings)
+        self.name_slice_slider  = App.create_range_slider(self, from_=0, to=len(self.app.optmenu.get()), text="slice file name", command= lambda value, var="slice_var": self.update_slider_value(value, var), row=5, column =1, width=200, columnspan=2, init_value=[0, len(self.app.optmenu.get())])
+
+        self.slice_var = customtkinter.StringVar()  # StringVar to hold the label value
+        App.create_label(self, textvariable=self.slice_var, column=3, row=5, width=50, anchor='w', sticky='w')
+        #set initial values
+        self.init_values()
+        
+    # initiate current values
+    def init_values(self):
+        return
+
+    # reset to defaul values
+    def reset_values(self):
+        # Here we define the standard values!!!
+        return
+        
+        
+    def update_slider_value(self, value, var_name):
+        variable = getattr(self, var_name)
+        (x1, x2) = value 
+        variable.set(self.app.optmenu.get()[slice(int(x1), int(x2))])
+        self.set_plot_settings(None)
+        
+    def set_plot_settings(self, val):
+        # self.app.aspect=self.aspect.get()
+        self.app.legend_type = self.legend_type[self.legend_type_list.get()]
+        self.app.legend_name = self.legend_name[self.legend_name_list.get()]
 
     def toggle_boolean(self, boolean):
         boolean.set(not boolean.get())
