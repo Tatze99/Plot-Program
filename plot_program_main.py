@@ -108,7 +108,8 @@ class App(customtkinter.CTk):
         self.initialize_ui()
         self.initialize_plot_has_been_called = False
         self.folder_path.insert(0, Standard_path)
-        self.toplevel_window = None
+        self.toplevel_window = {'Plot Settings': None,
+                                'Legend Settings': None}
         # hide the multiplot button
         self.addplot_button.grid_remove() 
         self.reset_button.grid_remove()
@@ -194,7 +195,7 @@ class App(customtkinter.CTk):
         self.addplot_button = App.create_button(frame, text="Multiplot",              command=self.plot,            column=0, row=5, width=90, padx = (120,10), pady=(15,5))   # Multiplot button
         self.load_button    = App.create_button(frame, text="Load Folder", command=self.read_file_list,  column=0, row=1, image=self.img_folder)
         self.save_button    = App.create_button(frame, text="Save Figure", command=self.save_figure,     column=0, row=3,  image=self.img_save)
-        self.set_button     = App.create_button(frame, text="Plot settings",          command=lambda: self.open_toplevel(SettingsWindow, "Settings"), column=0, row=4, image=self.img_settings)
+        self.set_button     = App.create_button(frame, text="Plot settings",          command=lambda: self.open_toplevel(SettingsWindow, "Plot Settings"), column=0, row=4, image=self.img_settings)
         self.prev_button    = App.create_button(frame, text="<<",                     command=lambda: self.change_plot(self.replot,-1), column=0, row=6, width=90, padx = (10,120))
         self.next_button    = App.create_button(frame, text=">>",                     command=lambda: self.change_plot(self.replot,1), column=0, row=6, width=90, padx = (120,10))
         
@@ -307,6 +308,7 @@ class App(customtkinter.CTk):
     #################################################
 
     def initialize(self):
+        print(self.toplevel_window)
         if self.lineout_button.get():
             self.initialize_lineout(self.lineout_xy)
         elif self.FFT_button.get():
@@ -720,7 +722,7 @@ class App(customtkinter.CTk):
             self.ent_legend      = App.create_entry(self.settings_frame,column=1, row=row+2, columnspan=4, width=110)
             self.ent_label_text = App.create_label(self.settings_frame,column=0, row=row+1, text="x / y")
             self.ent_legend_text = App.create_label(self.settings_frame,column=0, row=row+2, text="legend")
-            self.legend_settings_button = App.create_button(self.settings_frame, text="Settings", command=lambda: self.open_toplevel(LegendWindow, "Legend"), column=3, row=row+2, columnspan=2, image=self.img_settings, width=110)
+            self.legend_settings_button = App.create_button(self.settings_frame, text="Settings", command=lambda: self.open_toplevel(LegendWindow, "Legend Settings"), column=3, row=row+2, columnspan=2, image=self.img_settings, width=110)
             # self.legend_type_list     = App.create_optionMenu(self.settings_frame, column=3, row=row+2, columnspan=2, values=list(self.legend_type.keys()), width=110)
         else:
             for name in ["ent_xlabel","ent_label_text","ent_ylabel","ent_legend","ent_legend_text","labels_title"]:
@@ -1063,13 +1065,13 @@ class App(customtkinter.CTk):
         if not (self.uselabels_button.get() or self.uselims_button.get() or self.fit_button.get() or self.multiplot_button.get() or self.lineout_button.get()):
             self.settings_frame.grid_remove()
             
-    def open_toplevel(self,cls,toplevel_name):
-        name = getattr(self, toplevel_name, None)
-        if name is None or not self.toplevel_window.winfo_exists():
-            name = cls(self)  # create window if its None or destroyed
-            name.focus()  # focus it
+    def open_toplevel(self,cls,var):
+
+        if self.toplevel_window[var] is None or not self.toplevel_window[var].winfo_exists():
+            self.toplevel_window[var] = cls(self)  # create window if its None or destroyed
+            self.toplevel_window[var].focus()  # focus it
         else:
-            name.focus()  # if window exists focus it
+            self.toplevel_window[var].focus()  # if window exists focus it
             
     def open_widget(self,cls):
         if self.fit_button.get() == 1:
@@ -1261,11 +1263,13 @@ class LegendWindow(customtkinter.CTkToplevel):
                             'Full_name': slice(0,None), 
                             'Remove file type': slice(0,-4),
                             'Remove date': slice(6,None),
+                            'Custom name': slice(None,None),
                             }
 
-        App.create_label(self, column=1, row=0, columnspan=2, text="Image plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
+        App.create_label(self, column=1, row=0, columnspan=2, text="Legend Settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
 
         # values for line plots
+        self.reset_button       = App.create_button(self, column=3, row=0, text="Reset Settings",   command=self.reset_values, width=130, pady=(20,5))
         self.legend_type_list   = App.create_optionMenu(self, column=1, row=3, columnspan=2, values=list(self.legend_type.keys()), text="Legend location", command=self.set_plot_settings)
         self.legend_name_list   = App.create_optionMenu(self, column=1, row=4, columnspan=2, values=list(self.legend_name.keys()), text="Legend name", command=self.set_plot_settings)
         self.name_slice_slider  = App.create_range_slider(self, from_=0, to=len(self.app.optmenu.get()), text="slice file name", command= lambda value, var="slice_var": self.update_slider_value(value, var), row=5, column =1, width=200, columnspan=2, init_value=[0, len(self.app.optmenu.get())])
@@ -1277,7 +1281,12 @@ class LegendWindow(customtkinter.CTkToplevel):
         
     # initiate current values
     def init_values(self):
-        return
+        self.legend_type_list.set(list(self.legend_type.keys())[list(self.legend_type.values()).index(self.app.legend_type)])
+        try:
+            self.legend_name_list.set(list(self.legend_name.keys())[list(self.legend_name.values()).index(self.app.legend_name)])
+        except ValueError:
+            self.legend_name_list.set(list(self.legend_name.keys())[list(self.legend_name.values()).index(slice(None,None))])
+        self.slice_var.set(self.app.optmenu.get())
 
     # reset to defaul values
     def reset_values(self):
@@ -1288,7 +1297,9 @@ class LegendWindow(customtkinter.CTkToplevel):
     def update_slider_value(self, value, var_name):
         variable = getattr(self, var_name)
         (x1, x2) = value 
-        variable.set(self.app.optmenu.get()[slice(int(x1), int(x2))])
+        slice_object = slice(int(x1), int(x2))
+        variable.set(self.app.optmenu.get()[slice_object])
+        self.legend_name['Custom name'] = slice_object
         self.set_plot_settings(None)
         
     def set_plot_settings(self, val):
