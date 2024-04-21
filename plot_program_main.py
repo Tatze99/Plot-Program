@@ -25,6 +25,7 @@ from scipy.interpolate import interp1d
 from inspect import signature # get number of arguments of a function
 import cv2 # image fourier transform
 from PIL import Image
+from sys import exit as sysexit
 
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -214,6 +215,9 @@ class App(customtkinter.CTk):
         self.lineout_button   = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
         self.FFT_button       = App.create_switch(frame, text="FFT",  command=self.fourier_trafo,    column=0, row=13, padx=20)
         
+        #tooltips
+        self.plot_button_ttp = CreateToolTip(self.plot_button, "Reset and reinitialize the plot \n- reset all limits \n- delete all previous multiplots")
+
         for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button", "FFT_button"]:
                 getattr(self, name).configure(state="disabled")
 
@@ -1096,8 +1100,9 @@ class App(customtkinter.CTk):
             self.fit_window.destroy()
             
     def on_closing(self):
-        quit() # Python 3.12 works
+        # quit() # Python 3.12 works
         self.destroy() # Python 3.9 on Laptop
+        sysexit()
         
         
 """
@@ -1474,7 +1479,59 @@ class Table(customtkinter.CTkScrollableFrame):
         for row in self.data:
             # self.insert_data(row)
             self.text_widget.insert("end", "\t".join(map(str, row)) + "\n")
-        
+
+class CreateToolTip(object):
+    """
+    https://stackoverflow.com/questions/3221956/how-do-i-display-tooltips-in-tkinter
+    create a tooltip for a given widget
+    """
+    def __init__(self, widget, text='widget info'):
+        self.waittime = 1000     #miliseconds
+        self.wraplength = 180   #pixels
+        self.widget = widget
+        self.text = text
+        self.widget.bind("<Enter>", self.enter)
+        self.widget.bind("<Leave>", self.leave)
+        self.widget.bind("<ButtonPress>", self.leave)
+        self.id = None
+        self.tw = None
+
+    def enter(self, event=None):
+        self.schedule()
+
+    def leave(self, event=None):
+        self.unschedule()
+        self.hidetip()
+
+    def schedule(self):
+        self.unschedule()
+        self.id = self.widget.after(self.waittime, self.showtip)
+
+    def unschedule(self):
+        id = self.id
+        self.id = None
+        if id:
+            self.widget.after_cancel(id)
+
+    def showtip(self, event=None):
+        x = y = 0
+        x, y, cx, cy = self.widget.bbox("insert")
+        x += self.widget.winfo_rootx() + 0
+        y += self.widget.winfo_rooty() + 40
+        # creates a toplevel window
+        self.tw = customtkinter.CTkToplevel(self.widget, fg_color = ["#f9f9fa","#343638"]) #["#979da2","#565b5e"]
+        # Leaves only the label and removes the app window
+        self.tw.wm_overrideredirect(True)
+        self.tw.wm_geometry("+%d+%d" % (x, y))
+        label = customtkinter.CTkLabel(self.tw, text=self.text + "\n Press F1 to deactivate tool tips", justify='left', wraplength = self.wraplength, fg_color = "transparent", padx=10, pady=5)
+        label.pack()
+
+    def hidetip(self):
+        tw = self.tw
+        self.tw= None
+        if tw:
+            tw.destroy()
+
 if __name__ == "__main__":
     app = App()
     app.state('zoomed')
