@@ -26,6 +26,7 @@ from inspect import signature # get number of arguments of a function
 import cv2 # image fourier transform
 from PIL import Image
 from sys import exit as sysexit
+from natsort import natsorted
 
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -38,7 +39,7 @@ matplotlib.rc('font', serif='Times New Roman')
 ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
 Standard_path = os.path.dirname(os.path.abspath(__file__))
-filelist = [fname for fname in os.listdir(Standard_path) if fname.endswith(('.csv', '.dat', '.txt', '.png', '.jpg', '.spec'))]
+filelist = natsorted([fname for fname in os.listdir(Standard_path) if fname.endswith(('.csv', '.dat', '.txt', '.png', '.jpg', '.spec'))])
 
 def exponential(x, a, b, c):
     return a * np.exp(b * x) + c
@@ -128,12 +129,12 @@ class App(customtkinter.CTk):
         self.img_previous = customtkinter.CTkImage(dark_image=Image.open(os.path.join(Standard_path,"ui_images","previous_arrow.png")), size=(15, 15))
         
     def initialize_variables(self):
-        self.ymax = 0
         self.ax1 = None
         self.plot_counter = 1
         self.color = "#1a1a1a" # toolbar
         self.reset_plots = True
-        self.reset_xlims = True
+        # self.reset_xlims = customtkinter.BooleanVar(value=False)
+        # self.reset_ylims = customtkinter.BooleanVar(value=False)
         self.legend_type = {'loc': 'best'}
         self.legend_name = None
 
@@ -211,9 +212,10 @@ class App(customtkinter.CTk):
         self.uselabels_button = App.create_switch(frame, text="Use labels", command=self.use_labels,  column=0, row=8, padx=20)
         self.uselims_button   = App.create_switch(frame, text="Use limits", command=self.use_limits,  column=0, row=9, padx=20)
         self.fit_button       = App.create_switch(frame, text="Use fit",    command=lambda: (self.open_widget(FitWindow), self.initialize), column=0, row=10, padx=20)
-        self.normalize_button = App.create_switch(frame, text="Normalize",  command=self.normalize_setup,    column=0, row=11, padx=20)
+        self.normalize_button = App.create_switch(frame, text="Normalize",  command=self.initialize,    column=0, row=11, padx=20)
         self.lineout_button   = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
         self.FFT_button       = App.create_switch(frame, text="FFT",  command=self.fourier_trafo,    column=0, row=13, padx=20)
+        # self.Advanced_button  = App.create_switch(frame, text="Advanced Settings",  command=self.advanced_settings,    column=0, row=16, padx=20)
         
         #tooltips
         self.plot_button_ttp = CreateToolTip(self.plot_button, "Reset and reinitialize the plot \n- reset all limits \n- delete all previous multiplots")
@@ -226,8 +228,8 @@ class App(customtkinter.CTk):
         self.columnconfigure(2,weight=1)
         # self.columnconfigure(1,weight=1)
         
-        self.appearance_mode_label = App.create_label(frame, text="Appearance Mode:", row=16, column=0, padx=20, pady=(10, 0), sticky="w")
-        self.appearance_mode_optionemenu = App.create_optionMenu(frame, values=["Dark","Light", "System"], command=self.change_appearance_mode_event, width=200, row=17, column=0, padx=20, pady=(5,10))
+        self.appearance_mode_label = App.create_label(frame, text="Appearance Mode:", row=17, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.appearance_mode_optionemenu = App.create_optionMenu(frame, values=["Dark","Light", "System"], command=self.change_appearance_mode_event, width=200, row=18, column=0, padx=20, pady=(5,10))
         
         #entries
         self.folder_path, self.folder_path_label = self.create_entry(column=2, row=0, text="Folder path", columnspan=2, width=600, padx=10, pady=10, sticky="w")
@@ -320,7 +322,6 @@ class App(customtkinter.CTk):
     #############################################################
 
     def initialize(self):
-        print(self.toplevel_window)
         if self.lineout_button.get():
             self.initialize_lineout(self.lineout_xy)
         elif self.FFT_button.get():
@@ -342,7 +343,7 @@ class App(customtkinter.CTk):
             self.plot_counter = 1
             plt.close(self.fig)
             
-        
+        self.ax_container = []
         self.lists = {}
         self.listnames = {}
         if not self.initialize_plot_has_been_called:
@@ -361,17 +362,21 @@ class App(customtkinter.CTk):
         # self.canvas.get_tk_widget().grid(row=2, column=2, columnspan=2)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
         self.toolbar = self.create_toolbar()
-        self.ymax = 0
+        self.ymax = float('-inf')
+        self.ymin = float('inf')
+        self.xmax = float('-inf')
+        self.xmin = float('inf')
+
         self.plot()
         if ((self.uselims_button.get() and self.reset_plots and not self.lineout_button.get() and not self.FFT_button.get()) or (self.uselims_button.get() and self.image_plot != self.image_plot_prev)): 
             # make sure the sliders are
-            self.update_limits()
+            self.update_slider_limits()
             xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
 
-            if self.reset_xlims:
-                self.xlim_slider.set([xlim_min, xlim_max])
-            else: self.reset_xlims = True
-            self.ylim_slider.set([ylim_min, ylim_max])
+            # if self.reset_xlims.get():
+            #     self.xlim_slider.set([xlim_min, xlim_max])
+            # if self.reset_ylims.get():
+            #     self.ylim_slider.set([ylim_min, ylim_max])
             
 
             self.update_plot("Update Limits")
@@ -396,12 +401,15 @@ class App(customtkinter.CTk):
         # multiplots but in several subplots
         if self.replot and (self.rows != 1 or self.cols != 1):
             if self.plot_counter > self.rows*self.cols: return
-            self.ax1 = self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter)
+            self.ax_container.append(self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter))
+            self.ax1 = self.ax_container[-1]
+            self.ax1.set_prop_cycle(cycler(color=plt.get_cmap(self.cmap).colors))
+            # self.ax1 = self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter)
         # multiplot but same axis, no image plot!
         elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter == 1) or not self.replot:
             self.ax1 = self.fig.add_subplot(1,1,1)
             self.ax1.set_prop_cycle(cycler(color=plt.get_cmap(self.cmap).colors))
-     
+
         # create the plot depending if we have a line or image plot
         if self.image_plot: self.make_image_plot(file_path)
         else:
@@ -412,15 +420,18 @@ class App(customtkinter.CTk):
             file_decimal = self.open_file(file_path)
             try:
                 self.data = np.array(read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
-                print("pandas")
+                # print("pandas")
             except: 
-                print("numpy")
+                # print("numpy")
                 self.data = np.loadtxt(file_path)
-            self.first_plot = self.make_line_plot("data", "ax1")
-        
-        self.plot_axis_parameters("ax1")
+            line_container = self.make_line_plot("data", "ax1")
 
+        self.plot_axis_parameters("ax1")
         self.update_plot(None)
+
+        if self.uselims_button.get():
+            self.ylim_slider.set([self.ymin, self.ymax])
+
         self.plot_counter += 1
 
 
@@ -464,10 +475,13 @@ class App(customtkinter.CTk):
             if self.legend_name is not None:
                 self.plot_kwargs["label"] += self.optmenu.get()[self.legend_name]
 
-        if self.uselims_button.get():
-            self.ylim_slider.set([np.min(data[:, 1]), max(self.ymax,np.max(data[:,1]))])
-
         if self.normalize_button.get(): self.normalize()
+
+        self.ymax = max(np.max(self.data[:,1]), self.ymax)
+        self.ymin = min(np.min(self.data[:,1]), self.ymin)
+        self.xmax = max(np.max(self.data[:,0]), self.xmax)
+        self.xmin = min(np.min(self.data[:,0]), self.xmin)
+
         ######### create the plot
         plot = getattr(axis, self.plot_type)
         plot_object, = plot(data[:, 0], moving_average(data[:, 1], self.moving_average), **self.plot_kwargs)
@@ -574,27 +588,28 @@ class App(customtkinter.CTk):
     def update_plot(self, val):
         if self.uselims_button.get() == 1: 
             
+            self.update_slider_limits()
             self.x_l, self.x_r = self.xlim_slider.get()
             self.y_l, self.y_r = self.ylim_slider.get()
 
-            if isinstance(val, (tuple, float, str, set, dict)):
-                for (lim_box, limit) in zip(["xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"],
-                                            ["x_l", "x_r", "y_l", "y_r"]):
-                    box = getattr(self,lim_box)
-                    box.delete(0,'end')
-                    if self.image_plot:
-                        box.insert(0,str(int(getattr(self,limit))))
-                    else:
-                        box.insert(0,str(round(getattr(self,limit),4-len(str(int(getattr(self,limit)))))))
+            if isinstance(val, type(None)):
+                self.y_r = self.ymax
+
+            # if isinstance(val, (tuple, float, str, set, dict)):
+            for (lim_box, limit) in zip(["xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"],
+                                        ["x_l", "x_r", "y_l", "y_r"]):
+                box = getattr(self,lim_box)
+                box.delete(0,'end')
+                if self.image_plot:
+                    box.insert(0,str(int(getattr(self,limit))))
+                else:
+                    box.insert(0,str(round(getattr(self,limit),4-len(str(int(getattr(self,limit)))))))
 
             if self.image_plot: # display images
                 self.ax1.set_xlim(left=float(self.x_l), right=float(self.x_r))
                 self.ax1.set_ylim(bottom=float(self.y_l), top=float(self.y_r))
 
             else: # line plot
-                self.ymax = max(self.ymax,np.max(self.data[:,1]))
-                if self.normalize_button.get() == 1: self.normalize()
-                self.update_limits()
 
                 self.ax1.set_xlim(left=float(  self.x_l - 0.05 * (self.x_r - self.x_l)), right=float(self.x_r + 0.05 * (self.x_r - self.x_l)))
                 self.ax1.set_ylim(bottom=float(self.y_l - 0.05 * (self.y_r - self.y_l)), top=float(  self.y_r + 0.05 * (self.y_r - self.y_l)))
@@ -655,9 +670,29 @@ class App(customtkinter.CTk):
             self.folder_path.delete(0, customtkinter.END)
             self.folder_path.insert(0, path)
         global filelist
-        filelist = [fname for fname in os.listdir(self.folder_path.get()) if fname.endswith(('.csv', '.dat', '.txt', '.png', '.jpg', '.spec'))]
+        filelist = natsorted([fname for fname in os.listdir(self.folder_path.get()) if fname.endswith(('.csv', '.dat', '.txt', '.png', '.jpg', '.spec'))])
         self.optmenu.configure(values=filelist)
         self.optmenu.set(filelist[0])
+    
+    def control_z(self):
+        
+        if self.replot and (self.rows != 1 or self.cols != 1):
+            self.plot_counter -= 1
+            self.ax_container[-1].set_visible(False)
+            self.ax_container.pop()
+            self.ax1 = self.ax_container[-1]
+            
+
+        
+        elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter > 2):
+            self.ax1.get_lines()[-1].remove()
+            # ensure that the color is setback to its previous state by shifting the colormap by the value n determined by the current plot counter and resetting the prop_cycle
+            self.plot_counter -= 1
+            colors = plt.get_cmap(self.cmap).colors
+            n = (self.plot_counter-1) % len(colors)
+            self.ax1.set_prop_cycle(cycler(color=colors[n:]+ colors[:n]))
+
+        self.canvas.draw()
 
     """
     ############################################################################################
@@ -665,8 +700,17 @@ class App(customtkinter.CTk):
     ############################################################################################
     """
 
+    # def advanced_settings(self):
+    #     if self.Advanced_button.get() and self.uselims_button.get(): 
+    #         self.reset_xlims_button  = App.create_switch(self.settings_frame, text="reset x limits",  command=lambda: self.toggle_boolean(self.reset_xlims), column=1,columnspan=2, row=4+3, padx=20)
+    #         self.reset_ylims_button  = App.create_switch(self.settings_frame, text="reset y limits",  command=lambda: self.toggle_boolean(self.reset_ylims), column=1,columnspan=2, row=4+4, padx=20)
+    #     elif not self.Advanced_button.get() and self.uselims_button.get():
+    #         self.reset_xlims_button.grid_remove()
+    #         self.reset_ylims_button.grid_remove()
+
     def use_limits(self):
         if not self.initialize_plot_has_been_called: return
+        # if self.Advanced_button.get(): self.advanced_settings()
         if self.uselims_button.get() == 1:
             row = 4 # 4 from the use_labels
             self.settings_frame.grid()
@@ -994,19 +1038,13 @@ class App(customtkinter.CTk):
         file_name = customtkinter.filedialog.asksaveasfilename()
         np.savetxt(file_name, data, fmt="%.4e")
         
-    def update_limits(self):
+    def update_slider_limits(self):
         if self.image_plot:
             self.xlim_slider.configure(from_=0, to=len(self.data[0,:]))
             self.ylim_slider.configure(from_=0, to=len(self.data[:,0]))
         else:
-            self.xlim_slider.configure(from_=np.floor(np.min(self.data[:, 0])), to=np.ceil(np.max(self.data[:, 0])))  
-            self.ylim_slider.configure(from_=np.min(self.data[:, 1]), to=self.ymax)
-
-        
-    def normalize_setup(self):
-        self.reset_xlims = False        
-        self.initialize()
-        
+            self.xlim_slider.configure(from_=self.xmin, to=self.xmax)  
+            self.ylim_slider.configure(from_=self.ymin, to=self.ymax)      
     
     def normalize(self):
         if self.image_plot:
@@ -1077,7 +1115,6 @@ class App(customtkinter.CTk):
 
     def toggle_boolean(self, boolean):
         boolean.set(not boolean.get())
-        self.initialize_plot()
 
     def close_settings_window(self):
         if not (self.uselabels_button.get() or self.uselims_button.get() or self.fit_button.get() or self.multiplot_button.get() or self.lineout_button.get()):
@@ -1536,4 +1573,6 @@ if __name__ == "__main__":
     app = App()
     app.state('zoomed')
     app.protocol("WM_DELETE_WINDOW", app.on_closing)
+
+    app.bind("<Control-z>", lambda x: app.control_z())
     app.mainloop()
