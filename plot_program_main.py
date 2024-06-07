@@ -31,6 +31,12 @@ from natsort import natsorted
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
+tooltips_enabled = True
+
+def toggle_bool(event=None):
+    global tooltips_enabled
+    tooltips_enabled = not tooltips_enabled
+
 version_number = "24/04"
 plt.style.use('default')
 matplotlib.rc('font', family='serif')
@@ -218,7 +224,25 @@ class App(customtkinter.CTk):
         # self.Advanced_button  = App.create_switch(frame, text="Advanced Settings",  command=self.advanced_settings,    column=0, row=16, padx=20)
         
         #tooltips
-        self.plot_button_ttp = CreateToolTip(self.plot_button, "Reset and reinitialize the plot \n- reset all limits \n- delete all previous multiplots")
+        tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file",
+                    "save_button": "Save the current image\n- Add a file type, standard is '.png'\n- Images can be saved in a plain format (without the axis) by checking Plot settings -> Save plain images",
+                    "set_button":       "Open the Plot settings window\n- Top: Image Plot settings\n- Bottom Line Plot settings\n- Side: Boolean settings",
+                    "plot_button":      "Reset and reinitialize the plot \n- delete all previous multiplots",
+                    "reset_button":     "Reset and reinitialize the plot \n- delete all previous multiplots",
+                    "addplot_button":   "Plot the currently selected file",
+                    "prev_button":      "Plot the previous file in the list",
+                    "next_button":      "Plot the next file in the list",
+                    "multiplot_button": "Create multiple plots in one figure \n- choose rows = 1, cols = 1 for single graph multiplots",
+                    "uselabels_button": "Create x,y-labels, add a legend\n- Legend settings: choose location, add file name to legend",
+                    "uselims_button":   "Choose x,y-limits for line and image plots\n- x-limits stay the same when resetting the plot\n- y-limits will change to display all figures\n- the limits can be set with the sliders or typed in manually", 
+                    "fit_button":       "Fit a function to the current data set\n- initial fit parameters can be set when the fit does not converge\n- use slider to fit only parts of the function\n- the textbox can be hidden via the 'Plot settings' -> 'Hide fit params'",
+                    "normalize_button": "Normalize the plot\n- data file: normalize to max = 1 or area = 1 (Plot settings -> normalize Area)\n- image file: enhance the contrast of the image (can be changed by adjusting: Plot settings -> Enhance value)", 
+                    "lineout_button": "Display a lineout function\n- only used for images, no multiplot possible", 
+                    "FFT_button": "Display the |FT(f)|² of the data\n- limits of the Fourier window can be set\n- zero padding (factor determines number of zeros/x-array length)",
+                    }
+        
+        for name, description in tooltips.items():
+            setattr(self, name+"_ttp", CreateToolTip(getattr(self, name), description))
 
         for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button", "FFT_button"]:
                 getattr(self, name).configure(state="disabled")
@@ -374,11 +398,11 @@ class App(customtkinter.CTk):
             xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
 
             # if self.reset_xlims.get():
-            #     self.xlim_slider.set([xlim_min, xlim_max])
             # if self.reset_ylims.get():
-            #     self.ylim_slider.set([ylim_min, ylim_max])
+            if self.image_plot != self.image_plot_prev:
+                self.xlim_slider.set([xlim_min, xlim_max])
+                self.ylim_slider.set([ylim_min, ylim_max])
             
-
             self.update_plot("Update Limits")
         
     def plot(self):
@@ -388,16 +412,9 @@ class App(customtkinter.CTk):
         self.image_plot_prev = self.image_plot
         if (".png" in file_path or ".jpg" in file_path):
             self.image_plot = True 
-            try: 
-                self.switch_multiplt.deselect()
-                self.switch_multiplt.configure(state="disabled")
-            except: pass
         else:
             self.image_plot = False
-            try:
-                self.switch_multiplt.configure(state="enabled")
-            except: pass
-
+        
         # multiplots but in several subplots
         if self.replot and (self.rows != 1 or self.cols != 1):
             if self.plot_counter > self.rows*self.cols: return
@@ -426,12 +443,17 @@ class App(customtkinter.CTk):
                 self.data = np.loadtxt(file_path)
             line_container = self.make_line_plot("data", "ax1")
 
+        # if self.uselims_button.get() and self.image_plot != self.image_plot_prev:
+        #         xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
+        #         self.xlim_slider.set([xlim_min, xlim_max])
+        #         self.ylim_slider.set([ylim_min, ylim_max])
+
         self.plot_axis_parameters("ax1")
+        
         self.update_plot(None)
 
-        if self.uselims_button.get():
+        if self.uselims_button.get() and not self.image_plot:
             self.ylim_slider.set([self.ymin, self.ymax])
-
         self.plot_counter += 1
 
 
@@ -496,7 +518,7 @@ class App(customtkinter.CTk):
             widget.configure(width=min(300,0.75*self.tabview.winfo_width()/(1.1*self.plot_counter+1)))
 
         # create the fit
-        if self.use_fit == 1 and not(self.FFT_button.get() and ax=="ax1"):
+        if self.use_fit == 1 and not(self.FFT_button.get() and ax=="ax1") and (not self.image_plot or self.fit_button.get()):
             self.make_fit_plot(ax, dat)
 
         if self.FFT_button.get() and ax == "ax1":
@@ -540,7 +562,8 @@ class App(customtkinter.CTk):
             axis.text(0.05, 0.9, FitWindow.get_fitted_labels(self.fit_window), ha='left', va='top', transform=axis.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'), size=8)
 
     def make_image_plot(self, file_path):
-        if self.image_plot != self.image_plot_prev and self.rows == 1 and self.cols == 1:
+        # used in a onegraph multiplot when we change to an image
+        if self.image_plot != self.image_plot_prev and (self.rows == 1 and self.cols == 1) and self.replot:
             return
 
         self.data = cv2.imdecode(np.fromfile(file_path, np.uint8), cv2.IMREAD_UNCHANGED)
@@ -560,8 +583,8 @@ class App(customtkinter.CTk):
             )
 
         if self.convert_pixels.get() == True:
-            self.ax1.set(xticks=np.arange(0,len(self.data[0,:]), self.label_dist/self.pixel_size), xticklabels=np.arange(0,len(self.data[0,:])*self.pixel_size, self.label_dist))
-            self.ax1.set(yticks=np.arange(0,len(self.data[:,0]), self.label_dist/self.pixel_size), yticklabels=np.arange(0,len(self.data[:,0])*self.pixel_size, self.label_dist))
+            self.ax1.set(xticks=np.arange(0,len(self.data[0,:]), self.label_dist/self.pixel_size), xticklabels=['{:.1f}'.format(a) for a in np.arange(0,len(self.data[0,:])*self.pixel_size, self.label_dist)])
+            self.ax1.set(yticks=np.arange(0,len(self.data[:,0]), self.label_dist/self.pixel_size), yticklabels=['{:.1f}'.format(a) for a in np.arange(0,len(self.data[:,0])*self.pixel_size, self.label_dist)])
 
         # normalize the image brightness
         if self.normalize_button.get(): self.normalize()
@@ -587,23 +610,22 @@ class App(customtkinter.CTk):
 
     def update_plot(self, val):
         if self.uselims_button.get() == 1: 
-            
             self.update_slider_limits()
             self.x_l, self.x_r = self.xlim_slider.get()
             self.y_l, self.y_r = self.ylim_slider.get()
 
-            if isinstance(val, type(None)):
+            if isinstance(val, type(None)) and not self.image_plot:
                 self.y_r = self.ymax
 
-            # if isinstance(val, (tuple, float, str, set, dict)):
-            for (lim_box, limit) in zip(["xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"],
-                                        ["x_l", "x_r", "y_l", "y_r"]):
-                box = getattr(self,lim_box)
-                box.delete(0,'end')
-                if self.image_plot:
-                    box.insert(0,str(int(getattr(self,limit))))
-                else:
-                    box.insert(0,str(round(getattr(self,limit),4-len(str(int(getattr(self,limit)))))))
+            if isinstance(val, (tuple, float, str, set, dict, type(None))):
+                for (lim_box, limit) in zip(["xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"],
+                                            ["x_l", "x_r", "y_l", "y_r"]):
+                    box = getattr(self,lim_box)
+                    box.delete(0,'end')
+                    if self.image_plot:
+                        box.insert(0,str(int(getattr(self,limit))))
+                    else:
+                        box.insert(0,str(round(getattr(self,limit),4-len(str(int(getattr(self,limit)))))))
 
             if self.image_plot: # display images
                 self.ax1.set_xlim(left=float(self.x_l), right=float(self.x_r))
@@ -652,7 +674,7 @@ class App(customtkinter.CTk):
         if 0 <= index < len(filelist):
             self.optmenu.set(filelist[index])
             self.reset_plots = False
-            if replot and not self.lineout_button.get(): 
+            if replot and not self.lineout_button.get():
                 self.plot()
             else:
                 self.initialize()
@@ -812,7 +834,7 @@ class App(customtkinter.CTk):
             self.ent_cols.insert(0,str(self.cols))
         else:
             self.plot_button.grid()
-            for name in ["ent_rows","ent_rows_text","ent_cols","ent_cols_text","reset_button","addplot_button","multiplot_title", "switch_multiplt"]:
+            for name in ["ent_rows","ent_rows_text","ent_cols","ent_cols_text","reset_button","addplot_button","multiplot_title"]:
                 getattr(self, name).grid_remove()
             self.close_settings_window()
             # reset number of rows and cols for plotting to single plot value
@@ -1167,7 +1189,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.grid_axis = ['both', 'x', 'y']
         self.cmap = ['tab10', 'tab20', 'tab20b','tab20c', 'Pastel1', 'Pastel2', 'Paired', 'Accent', 'Dark2', 'Set1', 'Set2', 'Set3']
         self.moving_average = ['1','2','4','6','8','10','16']
-        self.plot_type = {'Normal': 'plot', 'Semi Logarithmic x': 'semilogx', 'Semi Logarithmic y': 'semilogy', 'Log-Log plot': 'loglog'}
+        self.plot_type = {'Linear': 'plot', 'Semi Logarithmic x': 'semilogx', 'Semi Logarithmic y': 'semilogy', 'Log-Log plot': 'loglog'}
 
         App.create_label(self, column=1, row=0, columnspan=2, text="Image plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
         App.create_label(self, column=1, row=6, columnspan=2, text="Line plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
@@ -1191,15 +1213,42 @@ class SettingsWindow(customtkinter.CTkToplevel):
                                                     command= lambda value, var="lw_var": self.update_slider_value(value, var), text="line width", number_of_steps=100)
 
         self.reset_button           = App.create_button(self, column=4, row=0, text="Reset Settings",   command=self.reset_values, width=130, pady=(20,5))
-        self.scale_switch_button    = App.create_switch(self, column=4, row=1, text="Use Scalebar",     command=lambda: self.toggle_boolean(self.app.use_scalebar))
-        self.cbar_switch_button     = App.create_switch(self, column=4, row=2, text="Use Colorbar",     command=lambda: self.toggle_boolean(self.app.use_colorbar))
-        self.convert_pixels_button  = App.create_switch(self, column=4, row=3, text="Convert Pixels",   command=lambda: self.toggle_boolean(self.app.convert_pixels))
+        self.convert_pixels_button  = App.create_switch(self, column=4, row=1, text="Convert Pixels",   command=lambda: self.toggle_boolean(self.app.convert_pixels))
+        self.scale_switch_button    = App.create_switch(self, column=4, row=2, text="Use Scalebar",     command=lambda: self.toggle_boolean(self.app.use_scalebar))
+        self.cbar_switch_button     = App.create_switch(self, column=4, row=3, text="Use Colorbar",     command=lambda: self.toggle_boolean(self.app.use_colorbar))
         self.save_plain_img_button  = App.create_switch(self, column=4, row=4, text="Save plain images",command=lambda: self.toggle_boolean(self.app.save_plain_image))
         self.hide_params_button     = App.create_switch(self, column=4, row=5, text="Hide fit params",  command=lambda: self.toggle_boolean(self.app.display_fit_params_in_plot))
         self.norm_switch_button     = App.create_switch(self, column=4, row=6, text="Normalize 'Area'", command=lambda: self.toggle_boolean(self.app.change_norm_to_area))
         self.grid_lines_button      = App.create_switch(self, column=4, row=7, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
         self.hide_ticks_button      = App.create_switch(self, column=4, row=8, text="hide ticks",       command=lambda: self.toggle_boolean(self.app.hide_ticks))
         
+        #tooltips
+        tooltips = {"pixel_size":       "Set the size of a single pixel\n- the tick labels can be converted to real lengths by checking 'Convert Pixels'.",
+                    "label_dist":       "Set, at which points a new label is placed", 
+                    "aspect":           "Set the aspect of the image\n- 'equal' - original image aspect, no pixel distortion\n- 'auto' - fill the image to the size of the window, produces image distortion.",
+                    "cmap_imshow_list": "Choose between different colormaps", 
+                    "enhance_slider":   "Enhance the contrast of the images by dividing all pixel by the mean pixel value and multiplying them with the 'Enhance value'. Values > 255 will be set to 255 (white)",
+                    "plot_type_list":   "Choose between different plotting scales\n- Normal: plt.plot(...)\n- Semi Logarithmic x: plt.semilogx(...)\n- Semi Logarithmic y: plt.semilogy(...)\n- Log-Log plot: plt.loglog(...)",
+                    "linestyle_list":   "Choose different line styles for the plot.",
+                    "marker_list":      "Determine, if every data point is highlighted with a marker. Different marker shapes can be chosen.", 
+                    "cmap_list":        "Choose between different color cycles for multiplots.",
+                    "grid_lines_list":  "Check 'Use Grid'\n- Decide between showing major (and minor) grid lines.",
+                    "grid_axis_list":  "Check 'Use Grid'\n- Decide between showing only x- oder y-grid lines",
+                    "moving_av_list":   "Perform a moving average between neighbouring points to smooth the data.\n- set the number of neighbouring points\n- n = 1: no moving average\n- n=2: left and right neighbouring point",
+                    "linewidth_slider": "Choose the line width", 
+                    "convert_pixels_button": "Convert the integer pixel labels to lengths in [mm] by stating the 'pixel size'", 
+                    "scale_switch_button": "Show a scalebar in the bottom right corner.\n- Scale determined by 'pixel size'\n- Recommendation: use this setting together with 'hide ticks'",
+                    "cbar_switch_button": "Show a colorbar on the right to attribute the color to the numeric 'gray-value' between 0 and 1.", 
+                    "save_plain_img_button": "When saving a figure with 'Save Figure', only the picture will be saved in the raw format.\nNote: The colormap and current size of the image will be saved.",
+                    "hide_params_button": "When using a fit function, the textbox with the fit parameters in the plot will be hidden.",
+                    "norm_switch_button": "Only for line plots:\n- Off: Normalize to a maximum value of 1\n- On: Normalize to area of 1", 
+                    "grid_lines_button": "Use Gridlines", 
+                    "hide_ticks_button": "hide all ticks and tick-labels"
+                    }
+        
+        for name, description in tooltips.items():
+            setattr(self, name+"_ttp", CreateToolTip(getattr(self, name), description))
+
         # Slider labels    
         self.enhance_var = customtkinter.StringVar()  # StringVar to hold the label value
         self.lw_var = customtkinter.StringVar()  # StringVar to hold the label value
@@ -1524,7 +1573,7 @@ class CreateToolTip(object):
     """
     def __init__(self, widget, text='widget info'):
         self.waittime = 1000     #miliseconds
-        self.wraplength = 180   #pixels
+        self.wraplength = 300   #pixels
         self.widget = widget
         self.text = text
         self.widget.bind("<Enter>", self.enter)
@@ -1534,7 +1583,8 @@ class CreateToolTip(object):
         self.tw = None
 
     def enter(self, event=None):
-        self.schedule()
+        if tooltips_enabled:
+            self.schedule()
 
     def leave(self, event=None):
         self.unschedule()
@@ -1560,7 +1610,7 @@ class CreateToolTip(object):
         # Leaves only the label and removes the app window
         self.tw.wm_overrideredirect(True)
         self.tw.wm_geometry("+%d+%d" % (x, y))
-        label = customtkinter.CTkLabel(self.tw, text=self.text + "\n Press F1 to deactivate tool tips", justify='left', wraplength = self.wraplength, fg_color = "transparent", padx=10, pady=5)
+        label = customtkinter.CTkLabel(self.tw, text=self.text + "\nPress F1 to deactivate tool tips", justify='left', wraplength = self.wraplength, fg_color = "transparent", padx=10, pady=5)
         label.pack()
 
     def hidetip(self):
@@ -1569,10 +1619,12 @@ class CreateToolTip(object):
         if tw:
             tw.destroy()
 
+
 if __name__ == "__main__":
     app = App()
     app.state('zoomed')
     app.protocol("WM_DELETE_WINDOW", app.on_closing)
 
     app.bind("<Control-z>", lambda x: app.control_z())
+    app.bind("<F1>", toggle_bool)
     app.mainloop()
