@@ -37,7 +37,7 @@ def toggle_bool(event=None):
     global tooltips_enabled
     tooltips_enabled = not tooltips_enabled
 
-version_number = "24/04"
+version_number = "24/06"
 plt.style.use('default')
 matplotlib.rc('font', family='serif')
 matplotlib.rc('font', serif='Times New Roman')
@@ -222,6 +222,8 @@ class App(customtkinter.CTk):
         self.lineout_button   = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
         self.FFT_button       = App.create_switch(frame, text="FFT",  command=self.fourier_trafo,    column=0, row=13, padx=20)
         # self.Advanced_button  = App.create_switch(frame, text="Advanced Settings",  command=self.advanced_settings,    column=0, row=16, padx=20)
+        self.Data_Table_button= App.create_switch(self.tabview.tab("Data Table"), text="Plot Data Table", command=None, row=0, column=0, padx=20)
+        self.data_table = App.create_table(self.tabview.tab("Data Table"), data=np.vstack((np.linspace(0,5,100),np.linspace(0,5,100)**2)).T, width=300, sticky='ns', row=1, column=0, pady=(20,10), padx=10)
         
         #tooltips
         tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file",
@@ -335,7 +337,7 @@ class App(customtkinter.CTk):
         text_widget.grid(row=row, column=column, sticky=sticky, **kwargs)
         self.grid_rowconfigure(row, weight=1)
         if header is not None:
-            text_widget.insert("1.0", "\t".join(header) + "\n")
+            text_widget.insert("0.0", "\t".join(header) + "\n")
 
         for row in data:
             text_widget.insert("end", " \t ".join(map(str, np.round(row,2))) + "\n")
@@ -410,7 +412,7 @@ class App(customtkinter.CTk):
 
         # Decide if there is an image to process or a data file
         self.image_plot_prev = self.image_plot
-        if (".png" in file_path or ".jpg" in file_path):
+        if (".png" in file_path or ".jpg" in file_path) and not self.Data_Table_button.get():
             self.image_plot = True 
         else:
             self.image_plot = False
@@ -435,12 +437,15 @@ class App(customtkinter.CTk):
                 self.initialize_plot()
                 return
             file_decimal = self.open_file(file_path)
-            try:
-                self.data = np.array(read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
-                # print("pandas")
-            except: 
-                # print("numpy")
-                self.data = np.loadtxt(file_path)
+            if not self.Data_Table_button.get():
+                try:
+                    self.data = np.array(read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
+                    # print("pandas")
+                except: 
+                    # print("numpy")
+                    self.data = np.loadtxt(file_path)
+            else: 
+                self.data = []
             line_container = self.make_line_plot("data", "ax1")
 
         # if self.uselims_button.get() and self.image_plot != self.image_plot_prev:
@@ -479,11 +484,15 @@ class App(customtkinter.CTk):
 
         
     def make_line_plot(self, dat, ax):
-        data = getattr(self,dat)
-        axis = getattr(self,ax)
+
+        if self.Data_Table_button.get():
+            self.data = self.read_table_data(self.data_table.get("0.0","end"))
 
         if len(self.data[0, :]) == 1:
             self.data = np.vstack((range(len(self.data)), self.data[:, 0])).T
+        
+        data = getattr(self,dat)
+        axis = getattr(self,ax)
         
         # create dictionary of the plot key word arguments
         self.plot_kwargs = dict(
@@ -499,10 +508,10 @@ class App(customtkinter.CTk):
 
         if self.normalize_button.get(): self.normalize()
 
-        self.ymax = max(np.max(self.data[:,1]), self.ymax)
-        self.ymin = min(np.min(self.data[:,1]), self.ymin)
-        self.xmax = max(np.max(self.data[:,0]), self.xmax)
-        self.xmin = min(np.min(self.data[:,0]), self.xmin)
+        self.ymax = max(np.max(data[:,1]), self.ymax)
+        self.ymin = min(np.min(data[:,1]), self.ymin)
+        self.xmax = max(np.max(data[:,0]), self.xmax)
+        self.xmin = min(np.min(data[:,0]), self.xmin)
 
         ######### create the plot
         plot = getattr(axis, self.plot_type)
@@ -512,10 +521,11 @@ class App(customtkinter.CTk):
             axis.legend(**self.legend_type)
 
         # create the list
-        self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=self.plot_counter, pady=(0,0), padx=10)
-        self.lists["self.my_frame{}".format(self.plot_counter)] = App.create_table(self.tabview.tab("Data Table"), data=data, width=300, sticky='ns', row=1, column=self.plot_counter, pady=(20,10), padx=10)
-        for widget_key, widget in self.lists.items():
-            widget.configure(width=min(300,0.75*self.tabview.winfo_width()/(1.1*self.plot_counter+1)))
+        if not self.Data_Table_button.get():
+            self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=1, pady=(0,0), padx=10)
+            self.lists["self.my_frame{}".format(self.plot_counter)] = App.create_table(self.tabview.tab("Data Table"), data=data, width=300, sticky='ns', row=1, column=1, pady=(20,10), padx=10)
+        # for widget_key, widget in self.lists.items():
+            # widget.configure(width=min(300,0.75*self.tabview.winfo_width()/(1.1*self.plot_counter+1)))
 
         # create the fit
         if self.use_fit == 1 and not(self.FFT_button.get() and ax=="ax1") and (not self.image_plot or self.fit_button.get()):
@@ -557,7 +567,14 @@ class App(customtkinter.CTk):
         maximum = np.argmin(abs(data[:,0] - self.fit_window.fit_borders_slider.get()[1]))
         FitWindow.set_fit_params(self.fit_window, data[minimum:maximum,:])
         
-        self.fit_lineout, = axis.plot(data[minimum:maximum, 0], self.fit_plot(self.function, self.params, data[minimum:maximum,:]), **self.plot_kwargs)
+        self.plot_kwargs_fit = dict(
+            linestyle = "solid",
+            marker = None,
+            linewidth = self.linewidth
+            )
+
+        self.fit_lineout, = axis.plot(data[minimum:maximum, 0], self.fit_plot(self.function, self.params, data[minimum:maximum,:]), **self.plot_kwargs_fit)
+
         if self.display_fit_params_in_plot.get():
             axis.text(0.05, 0.9, FitWindow.get_fitted_labels(self.fit_window), ha='left', va='top', transform=axis.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'), size=8)
 
@@ -715,6 +732,24 @@ class App(customtkinter.CTk):
             self.ax1.set_prop_cycle(cycler(color=colors[n:]+ colors[:n]))
 
         self.canvas.draw()
+
+    def read_table_data(self, data_string):
+        data_string = data_string.replace(",",".")
+        lines = data_string.strip().split('\n')
+        # Initialize an empty list to hold the floats
+        rows = []
+
+        # Process each line
+        for line in lines:
+            # Split the line into individual numbers based on whitespace
+            numbers = line.split()
+            
+            # Convert the numbers to floats and add to rows list
+            rows.append([float(num) for num in numbers])
+
+        # Convert the list of lists into a 2D NumPy array
+        array_2d = np.array(rows)
+        return array_2d
 
     """
     ############################################################################################
