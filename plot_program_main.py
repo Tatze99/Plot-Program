@@ -222,8 +222,11 @@ class App(customtkinter.CTk):
         self.lineout_button   = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
         self.FFT_button       = App.create_switch(frame, text="FFT",  command=self.fourier_trafo,    column=0, row=13, padx=20)
         # self.Advanced_button  = App.create_switch(frame, text="Advanced Settings",  command=self.advanced_settings,    column=0, row=16, padx=20)
-        self.Data_Table_button= App.create_switch(self.tabview.tab("Data Table"), text="Plot Data Table", command=None, row=0, column=0, padx=20)
+        self.data_table_button= App.create_switch(self.tabview.tab("Data Table"), text="Plot Data Table", command=None, row=0, column=0, padx=20)
         self.data_table = App.create_table(self.tabview.tab("Data Table"), data=np.vstack((np.linspace(0,5,100),np.linspace(0,5,100)**2)).T, width=300, sticky='ns', row=1, column=0, pady=(20,10), padx=10)
+        self.xval_min_entry, self.xlims_entry_label      = App.create_entry(self.tabview.tab("Data Table"), row=0, column=3, width=100, text="x-limits", placeholder_text="x min")
+        self.xval_max_entry                              = App.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=100, placeholder_text="x max")
+        self.function_entry, self.function_entry_label   = App.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)", sticky="n")
         
         #tooltips
         tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file",
@@ -241,6 +244,7 @@ class App(customtkinter.CTk):
                     "normalize_button": "Normalize the plot\n- data file: normalize to max = 1 or area = 1 (Plot settings -> normalize Area)\n- image file: enhance the contrast of the image (can be changed by adjusting: Plot settings -> Enhance value)", 
                     "lineout_button": "Display a lineout function\n- only used for images, no multiplot possible", 
                     "FFT_button": "Display the |FT(f)|² of the data\n- limits of the Fourier window can be set\n- zero padding (factor determines number of zeros/x-array length)",
+                    "data_table_button": "Check this to plot own custom data in the window below\n- columns must be separated by a space or tab (not comma or semicolon)\n- decimal separator: point and comma works"
                     }
         
         for name, description in tooltips.items():
@@ -274,7 +278,7 @@ class App(customtkinter.CTk):
         entry = customtkinter.CTkEntry(self, width, placeholder_text=placeholder_text, **kwargs)
         entry.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if text is not None:
-            entry_label = App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e')
+            entry_label = App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e', sticky=sticky)
             return (entry, entry_label)
 
         return entry
@@ -412,7 +416,7 @@ class App(customtkinter.CTk):
 
         # Decide if there is an image to process or a data file
         self.image_plot_prev = self.image_plot
-        if (".png" in file_path or ".jpg" in file_path) and not self.Data_Table_button.get():
+        if (".png" in file_path or ".jpg" in file_path) and not self.data_table_button.get():
             self.image_plot = True 
         else:
             self.image_plot = False
@@ -437,7 +441,7 @@ class App(customtkinter.CTk):
                 self.initialize_plot()
                 return
             file_decimal = self.open_file(file_path)
-            if not self.Data_Table_button.get():
+            if not self.data_table_button.get():
                 try:
                     self.data = np.array(read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
                     # print("pandas")
@@ -485,8 +489,18 @@ class App(customtkinter.CTk):
         
     def make_line_plot(self, dat, ax):
 
-        if self.Data_Table_button.get():
+        if self.data_table_button.get():
             self.data = self.read_table_data(self.data_table.get("0.0","end"))
+
+            if self.function_entry.get() != "":
+                x = np.linspace(float(self.xval_min_entry.get()), float(self.xval_max_entry.get()),500)
+                print(float(self.xval_min_entry.get()), float(self.xval_max_entry.get()),x)
+                globals_dict = {"np": np, "x": x}
+                y = eval(self.function_entry.get(), globals_dict)
+                self.data = np.vstack((x,y)).T
+                for row in self.data:
+                    self.data_table.insert("end", " \t ".join(map(str, np.round(row,2))) + "\n")
+
 
         if len(self.data[0, :]) == 1:
             self.data = np.vstack((range(len(self.data)), self.data[:, 0])).T
@@ -521,7 +535,7 @@ class App(customtkinter.CTk):
             axis.legend(**self.legend_type)
 
         # create the list
-        if not self.Data_Table_button.get():
+        if not self.data_table_button.get():
             self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=1, pady=(0,0), padx=10)
             self.lists["self.my_frame{}".format(self.plot_counter)] = App.create_table(self.tabview.tab("Data Table"), data=data, width=300, sticky='ns', row=1, column=1, pady=(20,10), padx=10)
         # for widget_key, widget in self.lists.items():
