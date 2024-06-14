@@ -14,6 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib_scalebar.scalebar import ScaleBar
+import scipy.ndimage
 # from matplotlib.figure import Figure
 import ctypes
 # import io
@@ -41,11 +42,13 @@ version_number = "24/06"
 plt.style.use('default')
 matplotlib.rc('font', family='serif')
 matplotlib.rc('font', serif='Times New Roman')
+file_type_names = ('.csv', '.dat', '.txt', '.png', '.jpg', '.jpeg', '.spec', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm')
+image_type_names = ('png','.jpg', '.jpeg', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm')
 
 ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
 Standard_path = os.path.dirname(os.path.abspath(__file__))
-filelist = natsorted([fname for fname in os.listdir(Standard_path) if fname.endswith(('.csv', '.dat', '.txt', '.png', '.jpg', '.spec'))])
+filelist = natsorted([fname for fname in os.listdir(Standard_path) if fname.endswith(file_type_names)])
 
 def exponential(x, a, b, c):
     return a * np.exp(b * x) + c
@@ -106,6 +109,50 @@ def calc_log_value(x, x_l, x_r):
     if x   <= 1e-6*x_r: x   = 1e-6*x_r
     if x_l <= 1e-6*x_r: x_l = 1e-6*x_r
     return np.exp(np.log(x_l) + np.log(x_r/x_l) * (x-x_l)/(x_r-x_l))
+
+def get_border_points(x0, y0, angle, array_shape):
+    theta = np.radians(angle)
+    xdim, ydim = array_shape
+    intersections = []
+
+    if theta == 0:
+        intersections = [(0, y0), (xdim-1, y0)]
+
+    elif (theta == 90 or theta == -90):
+        intersections = [(x0, 0), (x0, ydim-1)]
+
+    else: 
+        # Intersection with the left border (x = 0)
+        t = -x0 / np.cos(theta)
+        y = y0 + t * np.sin(theta)
+        if 0 <= y < ydim:
+            intersections.append((0, round(y)))
+        
+        # Intersection with the right border (x = xdim-1)
+        t = (xdim-1 - x0) / np.cos(theta)
+        y = y0 + t * np.sin(theta)
+        if 0 <= y < ydim:
+            intersections.append((xdim-1, round(y)))
+        
+        # Intersection with the top border (y = 0)
+        t = -y0 / np.sin(theta)
+        x = x0 + t * np.cos(theta)
+        if 0 <= x < xdim:
+            intersections.append((round(x), 0))
+        
+        # Intersection with the bottom border (y = ydim-1)
+        t = (ydim-1 - y0) / np.sin(theta)
+        x = x0 + t * np.cos(theta)
+        if 0 <= x < xdim:
+            intersections.append((round(x), ydim-1))
+    
+    # Assuming there are exactly two intersection points for a line intersecting the border
+    if len(intersections) != 2:
+        raise ValueError("The line does not intersect the border exactly twice.")
+    
+    return intersections
+
+    return round(x1), round(x2), round(y1), round(y2)
 
 class App(customtkinter.CTk):
     def __init__(self):
@@ -353,7 +400,7 @@ class App(customtkinter.CTk):
 
     def initialize(self):
         if self.lineout_button.get():
-            self.initialize_lineout(self.lineout_xy)
+            self.initialize_lineout(self.choose_ax_button.get())
         elif self.FFT_button.get():
             self.initialize_FFT()
         else:
@@ -416,7 +463,7 @@ class App(customtkinter.CTk):
 
         # Decide if there is an image to process or a data file
         self.image_plot_prev = self.image_plot
-        if (".png" in file_path or ".jpg" in file_path) and not self.data_table_button.get():
+        if file_path.endswith(image_type_names) and not self.data_table_button.get():
             self.image_plot = True 
         else:
             self.image_plot = False
@@ -499,6 +546,7 @@ class App(customtkinter.CTk):
                 y = eval(self.function_entry.get(), globals_dict)
                 self.data = np.vstack((x,y)).T
                 for row in self.data:
+                    self.data_table.delete("0.0", "end")  # delete all text
                     self.data_table.insert("end", " \t ".join(map(str, np.round(row,2))) + "\n")
 
 
@@ -605,6 +653,8 @@ class App(customtkinter.CTk):
             b,g,r = self.data[:,:,0], self.data[:,:,1], self.data[:,:,2]
             if (b==g).all() and (b==r).all():
                 self.data = self.data[...,0]
+            else:
+                self.data = 0.2989 * r + 0.5870 * g + 0.1140 * b
 
         # create dictionary of the plot key word arguments
         self.plot_kwargs = dict(
@@ -723,7 +773,7 @@ class App(customtkinter.CTk):
             self.folder_path.delete(0, customtkinter.END)
             self.folder_path.insert(0, path)
         global filelist
-        filelist = natsorted([fname for fname in os.listdir(self.folder_path.get()) if fname.endswith(('.csv', '.dat', '.txt', '.png', '.jpg', '.spec'))])
+        filelist = natsorted([fname for fname in os.listdir(self.folder_path.get()) if fname.endswith(file_type_names)])
         self.optmenu.configure(values=filelist)
         self.optmenu.set(filelist[0])
     
@@ -909,22 +959,26 @@ class App(customtkinter.CTk):
 
             self.cols = 2
             self.rows = 1
-            self.lineout_xy = " x-line "
+            self.lineout_xvalue = int(len(self.data[0,:])/2)
+            self.lineout_yvalue = int(len(self.data[:,0])/2)
             self.settings_frame.grid()
             row = 12
             self.lineout_title    = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+2, values=[" x-line ", " y-line "], command=self.initialize_lineout, columnspan=2, padx=(10,10), sticky="w")
-            self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=max(len(self.data[:,0]), len(self.data[0,:])), command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=170, padx=(0,10), columnspan=3)
-            self.line_entry, self.ent_line_text = App.create_entry(self.settings_frame, row=row+1, column=1, width=50, text="line")
-            self.save_lineout_button = App.create_button(self.settings_frame, column = 3, row=row+2, text="Save Lineout", command= lambda: self.save_data_file(self.lineout_data), width=80, columnspan=2)
+            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+3, values=[" x-line ", " y-line "], command=self.plot_lineout, columnspan=2, padx=(10,10), sticky="w")
+            self.angle_slider     = App.create_slider(self.settings_frame, from_=-90, to=90, command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=170, padx=(0,10), columnspan=3, number_of_steps=181)
+            self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=max(len(self.data[:,0]), len(self.data[0,:])), command= lambda val=None: self.plot_lineout(val), row=row+2, column =2, width=170, padx=(0,10), columnspan=3)
+            self.line_entry, self.ent_line_text = App.create_entry(self.settings_frame, row=row+2, column=1, width=50, text="line")
+            self.angle_entry, self.ent_angle_text = App.create_entry(self.settings_frame, row=row+1, column=1, width=50, text="angle")
+            self.save_lineout_button = App.create_button(self.settings_frame, column = 3, row=row+3, text="Save Lineout", command= lambda: self.save_data_file(self.lineout_data), width=80, columnspan=2)
             self.line_entry.insert(0,str(int(len(self.data[:,0])/2)))
             self.line_entry.bind("<KeyRelease>", lambda event, val=self.line_entry, slider_widget=self.line_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
-            self.choose_ax_button.set("x-line")
-            self.choose_ax_button.configure(border_width= 5, fg_color = ["#3a7ebf", "#1f538d"], unselected_color = ["#3a7ebf", "#1f538d"], unselected_hover_color=["#325882", "#14375e"])
+            self.angle_entry.insert(0,str(int(0)))
+            self.angle_entry.bind("<KeyRelease>", lambda event, val=self.angle_entry, slider_widget=self.angle_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
+            self.choose_ax_button.set(" x-line ")
             self.initialize_lineout(" x-line ")
         else:
             try:
-                for name in ["lineout_title", "line_entry", "line_slider", "ent_line_text", "choose_ax_button", "save_lineout_button"]:
+                for name in ["lineout_title", "line_entry", "line_slider", "ent_line_text", "choose_ax_button", "save_lineout_button", "angle_slider", "angle_entry", "ent_angle_text"]:
                     getattr(self, name).grid_remove()
             except:
                 return
@@ -952,15 +1006,16 @@ class App(customtkinter.CTk):
         if val == " x-line ":
             if self.line_slider.get() >= self.y_lineout_max: self.line_slider.set(self.y_lineout_max-1)
             self.lineout_data = np.array([self.data[int(self.line_slider.get()),self.x_lineout_min:self.x_lineout_max]]).T
-            self.axline = self.ax1.axhline([int(self.line_slider.get())])
             self.line_slider.configure(from_=self.y_lineout_min, to=self.y_lineout_max-1)
-            self.lineout_xy = " x-line "
+            
         elif val == " y-line ":
             if self.line_slider.get() >= self.x_lineout_max: self.line_slider.set(self.x_lineout_max-1)
             self.lineout_data = np.array([self.data[self.y_lineout_min:self.y_lineout_max,int(self.line_slider.get())]]).T
-            self.axline = self.ax1.axvline([int(self.line_slider.get())])
             self.line_slider.configure(from_=self.x_lineout_min, to=self.x_lineout_max-1)
-            self.lineout_xy = " y-line "
+
+        (x1, y1), (x2, y2) = self.get_lineout_data()
+        self.axline = self.ax1.plot([x1, x2],[y1, y2], 'tab:blue')[0]
+        self.axpoint = self.ax1.plot(self.lineout_xvalue, self.lineout_yvalue, 'tab:blue', marker="o")[0]
         
         # reset slider value when the lineout is changed and the value is out of bounds
         self.line_slider.set(self.line_slider.get())
@@ -969,12 +1024,7 @@ class App(customtkinter.CTk):
         
         self.ax2 = self.fig.add_subplot(1,2,2)
         max_value = np.max(self.data)
-        
-        scale = 1
-        if self.convert_pixels.get():
-            scale = self.pixel_size
 
-        self.lineout_data = np.vstack((np.arange(0,len(self.lineout_data)*scale,scale), self.lineout_data[:, 0])).T
         self.lineout_plot = self.make_line_plot("lineout_data", "ax2")
         self.plot_axis_parameters("ax2")
 
@@ -985,20 +1035,43 @@ class App(customtkinter.CTk):
         self.ax2.set_ylim(0, max_value)
 
         self.canvas.draw()
-        self.choose_ax_button.set(None)
+
+    def get_lineout_data(self):
+        if self.choose_ax_button.get() == " x-line ":
+            self.lineout_xvalue = self.line_slider.get()
+        elif self.choose_ax_button.get() == " y-line ":
+            self.lineout_yvalue = self.line_slider.get()
+
+        theta = -self.angle_slider.get() 
+        (x1, y1), (x2, y2) = get_border_points(self.lineout_xvalue, self.lineout_yvalue, theta, (len(self.data[0,:]), len(self.data[:,0])))
+
+        num = round(np.sqrt((x2-x1)**2 + (y2-y1)**2))
+        x, y = np.linspace(x1, x2, num), np.linspace(y1, y2, num)
+
+        # Extract the values along the line, using cubic interpolation
+        brightness_value = scipy.ndimage.map_coordinates(self.data, np.vstack((y,x)))
+
+        scale = 1
+        if self.convert_pixels.get():
+            scale = self.pixel_size
+
+        self.lineout_data = np.vstack([np.arange(0,num*scale,scale), brightness_value]).T
+        return (x1, y1), (x2, y2)
+
 
     def plot_lineout(self, val):
         self.line_entry.delete(0, 'end')
         self.line_entry.insert(0,str(int(self.line_slider.get())))
+
+        self.angle_entry.delete(0, 'end')
+        self.angle_entry.insert(0,str(int(self.angle_slider.get())))
         
-        if self.lineout_xy == " x-line ":
-            self.lineout_data[:,1] = np.array([self.data[int(self.line_slider.get()),self.x_lineout_min:self.x_lineout_max]])
-            self.axline.set_ydata([int(self.line_slider.get())])
-        elif self.lineout_xy == " y-line ":
-            self.lineout_data[:,1] = np.array([self.data[self.y_lineout_min:self.y_lineout_max,int(self.line_slider.get())]])
-            self.axline.set_xdata([int(self.line_slider.get())])
-        
-        self.lineout_plot.set_ydata(self.lineout_data[:,1])
+        (x1, y1), (x2, y2) = self.get_lineout_data()
+
+        self.axline.set_data([x1, x2],[y1, y2])
+        self.axpoint.set_data([self.lineout_xvalue], [self.lineout_yvalue])
+        self.lineout_plot.set_data(self.lineout_data[:,0], self.lineout_data[:,1])
+
         if self.use_fit == 1:
             minimum = np.argmin(abs(self.lineout_data[:,0] - self.fit_window.fit_borders_slider.get()[0]))
             maximum = np.argmin(abs(self.lineout_data[:,0] - self.fit_window.fit_borders_slider.get()[1]))
