@@ -14,6 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib_scalebar.scalebar import ScaleBar
+from matplotlib.colors import ListedColormap
 import scipy.ndimage
 # from matplotlib.figure import Figure
 import ctypes
@@ -44,6 +45,8 @@ matplotlib.rc('font', family='serif')
 matplotlib.rc('font', serif='Times New Roman')
 file_type_names = ('.csv', '.dat', '.txt', '.png', '.jpg', '.jpeg', '.spec', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm')
 image_type_names = ('png','.jpg', '.jpeg', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm')
+sequential_colormaps = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper','Purples', 'Blues', 'Greens', 'Oranges', 'Reds','twilight', 'hsv', 'rainbow', 'jet', 'turbo', 'gnuplot', 'brg']
+
 
 ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
@@ -202,6 +205,8 @@ class App(customtkinter.CTk):
         self.use_grid_lines = customtkinter.BooleanVar(value=False)
         self.grid_ticks = 'major'
         self.grid_axis = 'both'
+        self.cmap_length = 10
+        self.single_color = 'tab:blue'
         
         # image plot settings
         self.cmap_imshow="magma"
@@ -271,9 +276,9 @@ class App(customtkinter.CTk):
         # self.Advanced_button  = App.create_switch(frame, text="Advanced Settings",  command=self.advanced_settings,    column=0, row=16, padx=20)
         self.data_table_button= App.create_switch(self.tabview.tab("Data Table"), text="Plot Data Table", command=None, row=0, column=0, padx=20)
         self.data_table = App.create_table(self.tabview.tab("Data Table"), data=np.vstack((np.linspace(0,5,100),np.linspace(0,5,100)**2)).T, width=300, sticky='ns', row=1, column=0, pady=(20,10), padx=10)
-        self.xval_min_entry, self.xlims_entry_label      = App.create_entry(self.tabview.tab("Data Table"), row=0, column=3, width=100, text="x-limits", placeholder_text="x min")
-        self.xval_max_entry                              = App.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=100, placeholder_text="x max")
-        self.function_entry, self.function_entry_label   = App.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)", sticky="n")
+        self.xval_min_entry, self.xlims_entry_label      = App.create_entry(self.tabview.tab("Data Table"), row=0, column=3, width=90, text="x-limits", placeholder_text="x min")
+        self.xval_max_entry                              = App.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=90, placeholder_text="x max")
+        self.function_entry, self.function_entry_label   = App.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)", sticky="nw", sticky_label="ne")
         
         #tooltips
         tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file",
@@ -321,11 +326,11 @@ class App(customtkinter.CTk):
         label.grid(row=row, column=column, sticky=sticky, columnspan=columnspan, padx=padx, pady=pady, **kwargs)
         return label
 
-    def create_entry(self, row, column, width=200, text=None, columnspan=1, padx=10, pady=5, placeholder_text=None, sticky='w', **kwargs):
+    def create_entry(self, row, column, width=200, text=None, columnspan=1, padx=10, pady=5, placeholder_text=None, sticky='w', sticky_label='e', **kwargs):
         entry = customtkinter.CTkEntry(self, width, placeholder_text=placeholder_text, **kwargs)
         entry.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if text is not None:
-            entry_label = App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e', sticky=sticky)
+            entry_label = App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e', sticky=sticky_label)
             return (entry, entry_label)
 
         return entry
@@ -473,12 +478,11 @@ class App(customtkinter.CTk):
             if self.plot_counter > self.rows*self.cols: return
             self.ax_container.append(self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter))
             self.ax1 = self.ax_container[-1]
-            self.ax1.set_prop_cycle(cycler(color=plt.get_cmap(self.cmap).colors))
-            # self.ax1 = self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter)
+            self.ax1.set_prop_cycle(cycler(color=self.get_colormap(self.cmap)))
         # multiplot but same axis, no image plot!
         elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter == 1) or not self.replot:
             self.ax1 = self.fig.add_subplot(1,1,1)
-            self.ax1.set_prop_cycle(cycler(color=plt.get_cmap(self.cmap).colors))
+            self.ax1.set_prop_cycle(cycler(color=self.get_colormap(self.cmap)))
 
         # create the plot depending if we have a line or image plot
         if self.image_plot: self.make_image_plot(file_path)
@@ -512,6 +516,25 @@ class App(customtkinter.CTk):
             self.ylim_slider.set([self.ymin, self.ymax])
         self.plot_counter += 1
 
+    def get_colormap(self, cmap):  # for line plots not image plots
+
+        if cmap == 'CUSTOM':
+            colormap = ListedColormap([self.single_color])
+            return colormap.colors
+        
+        colormap = plt.get_cmap(cmap)
+
+        # Convert the continuous colormap into an array to pass into prop_cycle for line plots
+        if cmap in sequential_colormaps:
+            if cmap in ['Purples', 'Blues', 'Greens', 'Oranges', 'Reds']:
+                # invert colormap and start at a brighter color (otherwise it almost looks black)
+                colormap = ListedColormap(colormap(np.linspace(0.9, 0, self.cmap_length)))
+            else:
+                colormap = ListedColormap(colormap(np.linspace(0, 1, self.cmap_length)))
+    
+        return colormap.colors
+        
+        
 
     def plot_axis_parameters(self, axis):
         axis = getattr(self, axis)
@@ -545,9 +568,9 @@ class App(customtkinter.CTk):
                 globals_dict = {"np": np, "x": x}
                 y = eval(self.function_entry.get(), globals_dict)
                 self.data = np.vstack((x,y)).T
+                self.data_table.delete("0.0", "end")  # delete all text
                 for row in self.data:
-                    self.data_table.delete("0.0", "end")  # delete all text
-                    self.data_table.insert("end", " \t ".join(map(str, np.round(row,2))) + "\n")
+                    self.data_table.insert("end", " \t ".join(map(str, np.round(row,4))) + "\n")
 
 
         if len(self.data[0, :]) == 1:
@@ -972,10 +995,10 @@ class App(customtkinter.CTk):
             self.save_lineout_button = App.create_button(self.settings_frame, column = 3, row=row+3, text="Save Lineout", command= lambda: self.save_data_file(self.lineout_data), width=80, columnspan=2)
             self.line_entry.insert(0,str(int(len(self.data[:,0])/2)))
             self.line_entry.bind("<KeyRelease>", lambda event, val=self.line_entry, slider_widget=self.line_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
-            self.angle_entry.insert(0,str(int(0)))
+            self.angle_entry.insert(0,str(0))
             self.angle_entry.bind("<KeyRelease>", lambda event, val=self.angle_entry, slider_widget=self.angle_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
-            self.choose_ax_button.set(" x-line ")
-            self.initialize_lineout(" x-line ")
+            self.choose_ax_button.set(" y-line ")
+            self.initialize_lineout(" y-line ")
         else:
             try:
                 for name in ["lineout_title", "line_entry", "line_slider", "ent_line_text", "choose_ax_button", "save_lineout_button", "angle_slider", "angle_entry", "ent_angle_text"]:
@@ -1301,7 +1324,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app = app
 
         # values for image plots
-        self.cmap_imshow = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray']
+        self.cmap_imshow = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper']
         self.aspect_values = ['equal', 'auto']
         
         # values for line plots
@@ -1309,8 +1332,11 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.markers = {'none':'', 'point':'.', 'circle':'o', 'pixel':',', 'triangle down': 'v', 'triangle up': '^', 'x': 'x', 'diamond': 'D'}
         self.grid_lines = ['major','minor','both']
         self.grid_axis = ['both', 'x', 'y']
-        self.cmap = ['tab10', 'tab20', 'tab20b','tab20c', 'Pastel1', 'Pastel2', 'Paired', 'Accent', 'Dark2', 'Set1', 'Set2', 'Set3']
+        self.cmap = ['tab10', 'tab20', 'tab20b','tab20c', 'Pastel1', 'Pastel2', 'Paired', 'Accent', 'Dark2', 'Set1', 'Set2', 'Set3', 'CUSTOM']
+        self.cmap.extend(sequential_colormaps)
         self.moving_average = ['1','2','4','6','8','10','16']
+        self.cmap_length = ['5','10','15','20','25','30','35','40']
+        self.single_colors = {'blue':'tab:blue','orange':'tab:orange','green':'tab:green','red':'tab:red','purple':'tab:purple','brown':'tab:brown','pink':'tab:pink','gray':'tab:gray','olive':'tab:olive','cyan':'tab:cyan'}
         self.plot_type = {'Linear': 'plot', 'Semi Logarithmic x': 'semilogx', 'Semi Logarithmic y': 'semilogy', 'Log-Log plot': 'loglog'}
 
         App.create_label(self, column=1, row=0, columnspan=2, text="Image plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
@@ -1327,10 +1353,12 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.plot_type_list     = App.create_optionMenu(self, column=1, row=7, columnspan=2, values=list(self.plot_type.keys()),text="Plot type",command=self.set_plot_settings)
         self.linestyle_list     = App.create_optionMenu(self, column=1, row=8, columnspan=2, values=list(self.values.keys()), text="Line style", command=self.set_plot_settings)
         self.marker_list        = App.create_optionMenu(self, column=1, row=9, columnspan=2, values=list(self.markers.keys()),text="Marker",     command=self.set_plot_settings)
-        self.cmap_list          = App.create_optionMenu(self, column=1, row=10, columnspan=2, values=self.cmap,                text="Colormap",   command=self.set_plot_settings)
-        self.grid_lines_list    = App.create_optionMenu(self, column=1, row=11, width=90, values=self.grid_lines, text="Grid",  command=self.set_plot_settings)
-        self.grid_axis_list     = App.create_optionMenu(self, column=2, row=11, width=90, values=self.grid_axis, command=self.set_plot_settings)
+        self.cmap_list          = App.create_optionMenu(self, column=1, row=10, width=110, columnspan=1, values=self.cmap,                text="Colormap",   command=self.set_plot_settings)
+        self.single_colors_list = App.create_optionMenu(self, column=2, row=10, width=70, columnspan=1, values=list(self.single_colors.keys()), command=self.set_plot_settings)
+        self.grid_lines_list    = App.create_optionMenu(self, column=1, row=11, width=110, values=self.grid_lines, text="Grid",  command=self.set_plot_settings)
+        self.grid_axis_list     = App.create_optionMenu(self, column=2, row=11, width=70, values=self.grid_axis, command=self.set_plot_settings)
         self.moving_av_list     = App.create_optionMenu(self, column=1, row=12, columnspan=2, values=self.moving_average,      text="Average",   command=self.set_plot_settings)
+        self.cmap_length_list   = App.create_optionMenu(self, column=2, row=10, width=70, columnspan=1, values=self.cmap_length, command=self.set_plot_settings)
         self.linewidth_slider   = App.create_slider(  self,  column=1, row=13, columnspan=2, init_value=1, from_=0.1, to=2, 
                                                     command= lambda value, var="lw_var": self.update_slider_value(value, var), text="line width", number_of_steps=100)
 
@@ -1344,6 +1372,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.grid_lines_button      = App.create_switch(self, column=4, row=7, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
         self.hide_ticks_button      = App.create_switch(self, column=4, row=8, text="hide ticks",       command=lambda: self.toggle_boolean(self.app.hide_ticks))
         
+        self.cmap_length_list.configure(state="disabled")
+        self.single_colors_list.grid_remove()
         #tooltips
         tooltips = {"pixel_size":       "Set the size of a single pixel\n- the tick labels can be converted to real lengths by checking 'Convert Pixels'.",
                     "label_dist":       "Set, at which points a new label is placed", 
@@ -1353,7 +1383,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
                     "plot_type_list":   "Choose between different plotting scales\n- Normal: plt.plot(...)\n- Semi Logarithmic x: plt.semilogx(...)\n- Semi Logarithmic y: plt.semilogy(...)\n- Log-Log plot: plt.loglog(...)",
                     "linestyle_list":   "Choose different line styles for the plot.",
                     "marker_list":      "Determine, if every data point is highlighted with a marker. Different marker shapes can be chosen.", 
-                    "cmap_list":        "Choose between different color cycles for multiplots.",
+                    "cmap_list":        "Choose between different color cycles for multiplots. We differentiate between qualtitative and sequential colormaps:\n- Qualitative Cmap: We cycle through a list of predefined colors of specific length\n- CUSTOM: Use a single color. The color can be chosen by the dropdown menu on the right\n- Sequential Cmap: We create a list of colors based on a continuous colormap. The number of colors can be set by the dropdown menu on the right",
                     "grid_lines_list":  "Check 'Use Grid'\n- Decide between showing major (and minor) grid lines.",
                     "grid_axis_list":  "Check 'Use Grid'\n- Decide between showing only x- oder y-grid lines",
                     "moving_av_list":   "Perform a moving average between neighbouring points to smooth the data.\n- set the number of neighbouring points\n- n = 1: no moving average\n- n=2: left and right neighbouring point",
@@ -1392,10 +1422,12 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.linestyle_list.set(list(self.values.keys())[list(self.values.values()).index(self.app.linestyle)])
         self.marker_list.set(list(self.markers.keys())[list(self.markers.values()).index(self.app.markers)])
         self.plot_type_list.set(list(self.plot_type.keys())[list(self.plot_type.values()).index(self.app.plot_type)])
+        self.single_colors_list.set(list(self.single_colors.keys())[list(self.single_colors.values()).index(self.app.single_color)])
         self.cmap_list.set(self.app.cmap)
         self.grid_lines_list.set(self.app.grid_ticks)
         self.grid_axis_list.set(self.app.grid_axis)
         self.moving_av_list.set(self.app.moving_average)
+        self.cmap_length_list.set(self.app.cmap_length)
         self.enhance_slider.set(self.app.enhance_value)
         self.linewidth_slider.set(self.app.linewidth)
         self.update_slider_value(self.app.enhance_value, "enhance_var")
@@ -1425,10 +1457,12 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.linestyle_list.set(next(iter(self.values)))
         self.marker_list.set(next(iter(self.markers)))
         self.cmap_list.set(self.cmap[0])
+        self.single_colors_list.set(next(iter(self.single_colors)))
         self.grid_lines_button.deselect()
         self.grid_lines_list.set(self.grid_lines[0])
         self.grid_axis_list.set(self.grid_axis[0])
         self.moving_av_list.set(str(self.moving_average[0]))
+        self.cmap_length_list.set(str(self.cmap_length[1]))
         self.plot_type_list.set(next(iter(self.plot_type)))
 
         self.enhance_slider.set(1)
@@ -1459,6 +1493,20 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app.grid_ticks = self.grid_lines_list.get()
         self.app.grid_axis = self.grid_axis_list.get()
         self.app.plot_type=self.plot_type[self.plot_type_list.get()]
+        self.app.cmap_length = int(self.cmap_length_list.get())
+        self.app.single_color = self.single_colors[self.single_colors_list.get()]
+
+        if self.cmap_list.get() in sequential_colormaps:
+            self.cmap_length_list.configure(state="enabled")
+        else: 
+            self.cmap_length_list.configure(state="disabled")
+
+        if self.cmap_list.get() == 'CUSTOM':
+            self.cmap_length_list.grid_remove()
+            self.single_colors_list.grid()
+        else: 
+            self.single_colors_list.grid_remove()
+            self.cmap_length_list.grid()
 
     def toggle_boolean(self, boolean):
         boolean.set(not boolean.get())
