@@ -6,3 +6,4 @@ untitled1.py
 *.dat
 
 !ui_images/**
+!documentation_images/**
