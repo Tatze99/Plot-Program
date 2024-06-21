@@ -195,6 +195,8 @@ class App(customtkinter.CTk):
         self.legend_name = None
         self.canvas_ratio = None #None - choose ratio automatically
         self.canvas_width = 17 #cm
+        self.label_settings = "smart"
+        self.ticks_settings = "smart"
 
         # line plot settings
         self.linestyle='-'
@@ -544,10 +546,20 @@ class App(customtkinter.CTk):
 
     def plot_axis_parameters(self, axis):
         axis = getattr(self, axis)
+
+        last_row = self.plot_counter > self.cols*(self.rows-1)
+        first_col = (self.plot_counter-1) % self.cols == 0
+
         # if the hide_ticks option has been chosen in the multiplot, settings window
-        if self.hide_ticks.get():
-            axis.axes.xaxis.set_ticks([])
-            axis.axes.yaxis.set_ticks([])
+        if self.ticks_settings == "no ticks":
+            axis.set_xticks([])
+            axis.set_yticks([])
+        elif self.ticks_settings == "smart":
+            if not last_row: 
+                axis.set_xticklabels([])
+            if not first_col:
+                axis.set_yticklabels([])
+
 
         if self.use_grid_lines.get():
             axis.grid(visible=True, which=self.grid_ticks, axis=self.grid_axis)
@@ -557,9 +569,9 @@ class App(customtkinter.CTk):
 
         # place labels only on the left and bottom plots (if there are multiplots)
         if self.uselabels_button.get() == 1:
-            if self.plot_counter > self.cols*(self.rows-1): 
+            if last_row or self.label_settings == "default": 
                 axis.set_xlabel(self.ent_xlabel.get())
-            if (self.plot_counter-1) % self.cols == 0: 
+            if first_col or self.label_settings == "default": 
                 axis.set_ylabel(self.ent_ylabel.get())
 
         
@@ -574,9 +586,11 @@ class App(customtkinter.CTk):
                 globals_dict = {"np": np, "x": x}
                 y = eval(self.function_entry.get(), globals_dict)
                 self.data = np.vstack((x,y)).T
-                self.data_table.delete("0.0", "end")  # delete all text
-                for row in self.data:
-                    self.data_table.insert("end", " \t ".join(map(str, np.round(row,4))) + "\n")
+
+        # Display data in the data table
+        self.data_table.delete("0.0", "end")  # delete all text
+        for row in self.data:
+            self.data_table.insert("end", " \t ".join(map(str, np.round(row,4))) + "\n")
 
 
         if len(self.data[0, :]) == 1:
@@ -609,14 +623,15 @@ class App(customtkinter.CTk):
         ######### create the plot
         plot = getattr(axis, self.plot_type)
         plot_object, = plot(data[:, 0], moving_average(data[:, 1], self.moving_average), **self.plot_kwargs)
+        # axis.fill_between(data[:,0], moving_average(data[:, 1]-data[:,2], self.moving_average), moving_average(data[:, 1]+data[:,2], self.moving_average), alpha=0.1)
         #########
         if self.uselabels_button.get() and (self.ent_legend.get() != "" or self.legend_name is not None): 
             axis.legend(**self.legend_type)
 
         # create the list
-        if not self.data_table_button.get():
-            self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=1, pady=(0,0), padx=10)
-            self.lists["self.my_frame{}".format(self.plot_counter)] = App.create_table(self.tabview.tab("Data Table"), data=data, width=300, sticky='ns', row=1, column=1, pady=(20,10), padx=10)
+        # if not self.data_table_button.get():
+        #     self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=1, pady=(0,0), padx=10)
+        #     self.lists["self.my_frame{}".format(self.plot_counter)] = App.create_table(self.tabview.tab("Data Table"), data=data, width=300, sticky='ns', row=1, column=1, pady=(20,10), padx=10)
         # for widget_key, widget in self.lists.items():
             # widget.configure(width=min(300,0.75*self.tabview.winfo_width()/(1.1*self.plot_counter+1)))
 
@@ -880,10 +895,18 @@ class App(customtkinter.CTk):
                 value_min = locals()[lim_min]
                 value_max = locals()[lim_max]
 
+                if not self.image_plot:
+                    new_value_min = value_min - (value_max-value_min)*0.2
+                    new_value_max = value_max + (value_max-value_min)*0.2
+                else: 
+                    new_value_min = value_min 
+                    new_value_max = value_max
+
+
                 # create the entry objects "self.xlim_lbox" ...
                 setattr(self, lim_lbox, App.create_entry(self.settings_frame, row=row+i+1, column=1, width=50))
                 setattr(self, lim_rbox, App.create_entry(self.settings_frame, row=row+i+1, column=4, width=50))
-                setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=value_min, to=value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), columnspan=2, init_value=[value_min, value_max]))
+                setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=new_value_min, to=new_value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), columnspan=2, init_value=[value_min, value_max]))
 
                 # get the name of the created object, first the entry, second the slider
                 entryl_widget = getattr(self,lim_lbox)
@@ -1081,6 +1104,7 @@ class App(customtkinter.CTk):
 
         # Extract the values along the line, using cubic interpolation
         brightness_value = scipy.ndimage.map_coordinates(self.data, np.vstack((y,x)))
+        print(brightness_value)
 
         scale = 1
         if self.convert_pixels.get():
@@ -1218,17 +1242,17 @@ class App(customtkinter.CTk):
             self.xlim_slider.configure(from_=0, to=len(self.data[0,:]))
             self.ylim_slider.configure(from_=0, to=len(self.data[:,0]))
         else:
-            self.xlim_slider.configure(from_=self.xmin, to=self.xmax)  
-            self.ylim_slider.configure(from_=self.ymin, to=self.ymax)      
+            self.xlim_slider.configure(from_=self.xmin-(self.xmax-self.xmin)*0.2, to=self.xmax+(self.xmax-self.xmin)*0.2)  
+            self.ylim_slider.configure(from_=self.ymin-(self.ymax-self.ymin)*0.2, to=self.ymax+(self.ymax-self.ymin)*0.2)      
     
     def normalize(self):
         if self.image_plot:
             self.data = self.data * 0.5/np.mean(self.data)*self.enhance_value
             self.data[self.data>1] = 1
         elif self.change_norm_to_area.get() == False:
-            self.data[:, 1] /= np.max(self.data[:, 1])
+            self.data[:, 1:] /= np.max(self.data[:, 1])
         elif self.change_norm_to_area.get() == True:
-            self.data[:, 1] /= (np.sum(self.data[:, 1])*abs(self.data[0,0]-self.data[1,0]))
+            self.data[:, 1:] /= (np.sum(self.data[:, 1])*abs(self.data[0,0]-self.data[1,0]))
 
         self.ymax = max([self.ymax, np.max(self.data[:, 1])])
 
@@ -1333,12 +1357,14 @@ class SettingsWindow(customtkinter.CTkToplevel):
 
         # general values
         self.canvas_ratio = {'Auto': None, '4:3 ratio': 4/3, '16:9 ratio': 16/9, '3:2 ratio': 3/2, '3:1 ratio': 3,'2:1 ratio': 2, '1:1 ratio': 1, '1:2 ratio': 0.5}
+        self.ticks_settings = ["smart", "default", "no ticks"]
+        self.label_settings = ["smart", "default"]
         # values for image plots
         self.cmap_imshow = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper']
         self.aspect_values = ['equal', 'auto']
         
         # values for line plots
-        self.values = {'solid': '-', 'dashed': '--', 'dotted': ':', 'dashdotted': '-.', 'no line': ''}
+        self.linestyle = {'solid': '-', 'dashed': '--', 'dotted': ':', 'dashdotted': '-.', 'no line': ''}
         self.markers = {'none':'', 'point':'.', 'circle':'o', 'pixel':',', '∇': 'v', 'Δ': '^', 'x': 'x', '◆': 'D'}
         self.grid_lines = ['major','minor','both']
         self.grid_axis = ['both', 'x', 'y']
@@ -1350,43 +1376,45 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.plot_type = {'Linear': 'plot', 'Semi Logarithmic x': 'semilogx', 'Semi Logarithmic y': 'semilogy', 'Log-Log plot': 'loglog'}
 
         App.create_label(self, column=1, row=0, columnspan=2, text="General settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
-        App.create_label(self, column=1, row=2, columnspan=2, text="Image plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
-        App.create_label(self, column=1, row=8, columnspan=2, text="Line plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
+        App.create_label(self, column=1, row=4, columnspan=2, text="Image plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
+        App.create_label(self, column=1, row=10, columnspan=2, text="Line plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
 
         # general values 
         self.canvas_ratio_list   = App.create_optionMenu(self, column=1, row=1, width=110, columnspan=1, values=list(self.canvas_ratio.keys()), text="Canvas Size", command=self.set_plot_settings)
         self.canvas_width        = App.create_entry(self,   column=2, row=1, width=70, columnspan=1, placeholder_text="10 [cm]", sticky='w')
+        self.ticks_settings_list = App.create_optionMenu(self, column=1, row=2, width=110, columnspan=1, values=self.ticks_settings, text="Ticks, Label settings", command=self.set_plot_settings)
+        self.label_settings_list = App.create_optionMenu(self, column=2, row=2, width=70, columnspan=1, values=self.label_settings, command=self.set_plot_settings)
 
         # values for image plots, we need the dummy labels to access self.pixel_size at the tooltip
-        self.pixel_size, self.dummy_label = App.create_entry(self,   column=1, row=3, columnspan=2, text="Pixel size [µm]", placeholder_text="7.4 µm", sticky='w')
-        self.label_dist, self.dummy_label = App.create_entry(self,   column=1, row=4, columnspan=2, text="Label step [mm]", placeholder_text="1 mm", sticky='w')
-        self.aspect             = App.create_optionMenu(self, column=1, row=5, columnspan=2, values=self.aspect_values, text="Aspect",  command=self.set_plot_settings)
-        self.cmap_imshow_list   = App.create_optionMenu(self, column=1, row=6, columnspan=2, values=self.cmap_imshow,                text="Colormap",command=self.set_plot_settings)
-        self.enhance_slider     = App.create_slider(  self,   column=1, row=7, columnspan=2, init_value=1, from_=0.1, to=2, 
+        self.pixel_size, self.dummy_label = App.create_entry(self,   column=1, row=5, columnspan=2, text="Pixel size [µm]", placeholder_text="7.4 µm", sticky='w')
+        self.label_dist, self.dummy_label = App.create_entry(self,   column=1, row=6, columnspan=2, text="Label step [mm]", placeholder_text="1 mm", sticky='w')
+        self.aspect             = App.create_optionMenu(self, column=1, row=7, columnspan=2, values=self.aspect_values, text="Aspect",  command=self.set_plot_settings)
+        self.cmap_imshow_list   = App.create_optionMenu(self, column=1, row=8, columnspan=2, values=self.cmap_imshow,                text="Colormap",command=self.set_plot_settings)
+        self.enhance_slider     = App.create_slider(  self,   column=1, row=9, columnspan=2, init_value=1, from_=0.1, to=2, 
                                                     command= lambda value, var="enhance_var": self.update_slider_value(value, var), text="Enhance value", number_of_steps=100)
 
         # values for line plots
-        self.plot_type_list     = App.create_optionMenu(self, column=1, row=9, columnspan=2, values=list(self.plot_type.keys()),text="Plot type",command=self.set_plot_settings)
-        self.linestyle_list     = App.create_optionMenu(self, column=1, row=10, width=110, columnspan=1, values=list(self.values.keys()), text="Line style & Marker", command=self.set_plot_settings)
-        self.marker_list        = App.create_optionMenu(self, column=2, row=10, width=70, columnspan=1, values=list(self.markers.keys()),     command=self.set_plot_settings)
-        self.cmap_list          = App.create_optionMenu(self, column=1, row=11, width=110, columnspan=1, values=self.cmap,                text="Colormap",   command=self.set_plot_settings)
-        self.single_colors_list = App.create_optionMenu(self, column=2, row=11, width=70, columnspan=1, values=list(self.single_colors.keys()), command=self.set_plot_settings)
-        self.grid_lines_list    = App.create_optionMenu(self, column=1, row=12, width=110, values=self.grid_lines, text="Grid",  command=self.set_plot_settings)
-        self.grid_axis_list     = App.create_optionMenu(self, column=2, row=12, width=70, values=self.grid_axis, command=self.set_plot_settings)
-        self.moving_av_list     = App.create_optionMenu(self, column=1, row=13, columnspan=2, values=self.moving_average,      text="Average",   command=self.set_plot_settings)
-        self.cmap_length_list   = App.create_optionMenu(self, column=2, row=11, width=70, columnspan=1, values=self.cmap_length, command=self.set_plot_settings)
-        self.linewidth_slider   = App.create_slider(  self,  column=1, row=14, columnspan=2, init_value=1, from_=0.1, to=2, 
+        self.plot_type_list     = App.create_optionMenu(self, column=1, row=11, columnspan=2, values=list(self.plot_type.keys()),text="Plot type",command=self.set_plot_settings)
+        self.linestyle_list     = App.create_optionMenu(self, column=1, row=12, width=110, columnspan=1, values=list(self.linestyle.keys()), text="Line style & Marker", command=self.set_plot_settings)
+        self.marker_list        = App.create_optionMenu(self, column=2, row=12, width=70, columnspan=1, values=list(self.markers.keys()),     command=self.set_plot_settings)
+        self.cmap_list          = App.create_optionMenu(self, column=1, row=13, width=110, columnspan=1, values=self.cmap,                text="Colormap",   command=self.set_plot_settings)
+        self.single_colors_list = App.create_optionMenu(self, column=2, row=13, width=70, columnspan=1, values=list(self.single_colors.keys()), command=self.set_plot_settings)
+        self.grid_lines_list    = App.create_optionMenu(self, column=1, row=14, width=110, values=self.grid_lines, text="Grid",  command=self.set_plot_settings)
+        self.grid_axis_list     = App.create_optionMenu(self, column=2, row=14, width=70, values=self.grid_axis, command=self.set_plot_settings)
+        self.moving_av_list     = App.create_optionMenu(self, column=1, row=15, columnspan=2, values=self.moving_average,      text="Average",   command=self.set_plot_settings)
+        self.cmap_length_list   = App.create_optionMenu(self, column=2, row=13, width=70, columnspan=1, values=self.cmap_length, command=self.set_plot_settings)
+        self.linewidth_slider   = App.create_slider(  self,  column=1, row=16, columnspan=2, init_value=1, from_=0.1, to=2, 
                                                     command= lambda value, var="lw_var": self.update_slider_value(value, var), text="line width", number_of_steps=100)
 
         self.reset_button           = App.create_button(self, column=4, row=0, text="Reset Settings",   command=self.reset_values, width=130, pady=(20,5))
-        self.convert_pixels_button  = App.create_switch(self, column=4, row=3, text="Convert Pixels",   command=lambda: self.toggle_boolean(self.app.convert_pixels))
-        self.scale_switch_button    = App.create_switch(self, column=4, row=4, text="Use Scalebar",     command=lambda: self.toggle_boolean(self.app.use_scalebar))
-        self.cbar_switch_button     = App.create_switch(self, column=4, row=5, text="Use Colorbar",     command=lambda: self.toggle_boolean(self.app.use_colorbar))
-        self.save_plain_img_button  = App.create_switch(self, column=4, row=6, text="Save plain images",command=lambda: self.toggle_boolean(self.app.save_plain_image))
-        self.hide_params_button     = App.create_switch(self, column=4, row=9, text="Hide fit params",  command=lambda: self.toggle_boolean(self.app.display_fit_params_in_plot))
-        self.norm_switch_button     = App.create_switch(self, column=4, row=10, text="Normalize 'Area'", command=lambda: self.toggle_boolean(self.app.change_norm_to_area))
-        self.grid_lines_button      = App.create_switch(self, column=4, row=11, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
-        self.hide_ticks_button      = App.create_switch(self, column=4, row=12, text="hide ticks",       command=lambda: self.toggle_boolean(self.app.hide_ticks))
+        self.convert_pixels_button  = App.create_switch(self, column=4, row=5, text="Convert Pixels",   command=lambda: self.toggle_boolean(self.app.convert_pixels))
+        self.scale_switch_button    = App.create_switch(self, column=4, row=6, text="Use Scalebar",     command=lambda: self.toggle_boolean(self.app.use_scalebar))
+        self.cbar_switch_button     = App.create_switch(self, column=4, row=7, text="Use Colorbar",     command=lambda: self.toggle_boolean(self.app.use_colorbar))
+        self.save_plain_img_button  = App.create_switch(self, column=4, row=8, text="Save plain images",command=lambda: self.toggle_boolean(self.app.save_plain_image))
+        self.hide_params_button     = App.create_switch(self, column=4, row=11, text="Hide fit params",  command=lambda: self.toggle_boolean(self.app.display_fit_params_in_plot))
+        self.norm_switch_button     = App.create_switch(self, column=4, row=12, text="Normalize 'Area'", command=lambda: self.toggle_boolean(self.app.change_norm_to_area))
+        self.grid_lines_button      = App.create_switch(self, column=4, row=13, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
+        self.hide_ticks_button      = App.create_switch(self, column=4, row=14, text="hide ticks",       command=lambda: self.toggle_boolean(self.app.hide_ticks))
         
         self.cmap_length_list.configure(state="disabled")
         self.single_colors_list.grid_remove()
@@ -1422,8 +1450,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
         # Slider labels    
         self.enhance_var = customtkinter.StringVar()  # StringVar to hold the label value
         self.lw_var = customtkinter.StringVar()  # StringVar to hold the label value
-        App.create_label(self, textvariable=self.enhance_var, column=3, row=7, width=30, anchor='w', sticky='w')
-        App.create_label(self, textvariable=self.lw_var, column=3, row=14, width=30, anchor='w', sticky='w')
+        App.create_label(self, textvariable=self.enhance_var, column=3, row=9, width=30, anchor='w', sticky='w')
+        App.create_label(self, textvariable=self.lw_var, column=3, row=16, width=30, anchor='w', sticky='w')
         
         self.canvas_width.bind("<KeyRelease>", self.set_plot_settings)
         self.pixel_size.bind("<KeyRelease>", self.set_plot_settings)
@@ -1436,11 +1464,13 @@ class SettingsWindow(customtkinter.CTkToplevel):
     def init_values(self):
         self.canvas_ratio_list.set(list(self.canvas_ratio.keys())[list(self.canvas_ratio.values()).index(self.app.canvas_ratio)])
         self.canvas_width.insert(0,str(self.app.canvas_width))
+        self.ticks_settings_list.set(self.app.ticks_settings)
+        self.label_settings_list.set(self.app.label_settings)
         self.pixel_size.insert(0,str(self.app.pixel_size*1e3))
         self.label_dist.insert(0,str(self.app.label_dist))
         self.aspect.set(self.app.aspect)
         self.cmap_imshow_list.set(self.app.cmap_imshow)
-        self.linestyle_list.set(list(self.values.keys())[list(self.values.values()).index(self.app.linestyle)])
+        self.linestyle_list.set(list(self.linestyle.keys())[list(self.linestyle.values()).index(self.app.linestyle)])
         self.marker_list.set(list(self.markers.keys())[list(self.markers.values()).index(self.app.markers)])
         self.plot_type_list.set(list(self.plot_type.keys())[list(self.plot_type.values()).index(self.app.plot_type)])
         self.single_colors_list.set(list(self.single_colors.keys())[list(self.single_colors.values()).index(self.app.single_color)])
@@ -1469,6 +1499,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app.canvas_width = 17
         self.app.pixel_size = 7.4e-3
         self.app.label_dist = 1
+        self.ticks_settings_list.set(self.ticks_settings[0])
+        self.label_settings_list.set(self.label_settings[0])
         self.canvas_width.delete(0, 'end')
         self.canvas_width.insert(0,str(self.app.canvas_width))
         self.pixel_size.delete(0, 'end')
@@ -1479,7 +1511,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.cmap_imshow_list.set(self.cmap_imshow[0])
 
         self.canvas_ratio_list.set(next(iter(self.canvas_ratio)))
-        self.linestyle_list.set(next(iter(self.values)))
+        self.linestyle_list.set(next(iter(self.linestyle)))
         self.marker_list.set(next(iter(self.markers)))
         self.cmap_list.set(self.cmap[0])
         self.single_colors_list.set(next(iter(self.single_colors)))
@@ -1512,7 +1544,9 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app.enhance_value=self.enhance_slider.get()
 
         self.app.canvas_ratio=self.canvas_ratio[self.canvas_ratio_list.get()]
-        self.app.linestyle=self.values[self.linestyle_list.get()]
+        self.app.label_settings = self.label_settings_list.get()
+        self.app.ticks_settings = self.ticks_settings_list.get()
+        self.app.linestyle=self.linestyle[self.linestyle_list.get()]
         self.app.markers=self.markers[self.marker_list.get()]
         self.app.cmap=self.cmap_list.get()
         self.app.linewidth=self.linewidth_slider.get()
