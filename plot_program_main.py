@@ -211,6 +211,7 @@ class App(customtkinter.CTk):
         self.grid_axis = 'both'
         self.cmap_length = 10
         self.single_color = 'tab:blue'
+        self.sub_plot_counter = 1
         
         # image plot settings
         self.cmap_imshow="magma"
@@ -235,6 +236,7 @@ class App(customtkinter.CTk):
         self.use_scalebar = customtkinter.BooleanVar(value=False)
         self.use_colorbar = customtkinter.BooleanVar(value=False)
         self.convert_pixels = customtkinter.BooleanVar(value=False)
+        self.convert_rgb_to_gray = customtkinter.BooleanVar(value=False)
         self.rows = 1
         self.cols = 1
         
@@ -264,7 +266,7 @@ class App(customtkinter.CTk):
         self.reset_button   = App.create_button(frame, text="Reset",       command=self.initialize_plot, column=0, row=5, width=90, padx = (10,120), pady=(15,5))   # Multiplot button
         self.addplot_button = App.create_button(frame, text="Multiplot",   command=self.plot,            column=0, row=5, width=90, padx = (120,10), pady=(15,5))   # Multiplot button
         self.load_button    = App.create_button(frame, text="Load Folder", command=self.read_file_list,  column=0, row=1, image=self.img_folder)
-        self.save_button    = App.create_button(frame, text="Save Figure", command=self.save_figure,     column=0, row=3,  image=self.img_save)
+        self.save_button    = App.create_button(frame, text="Save Figure/data", command=self.save_figure,     column=0, row=3,  image=self.img_save)
         self.set_button     = App.create_button(frame, text="Plot settings",command=lambda: self.open_toplevel(SettingsWindow, "Plot Settings"), column=0, row=4, image=self.img_settings)
         self.prev_button    = App.create_button(frame,                      command=lambda: self.change_plot(self.replot,-1), column=0, row=6, width=90, padx = (10,120), image=self.img_previous)
         self.next_button    = App.create_button(frame,                      command=lambda: self.change_plot(self.replot,1), column=0, row=6, width=90, padx = (120,10), image=self.img_next)
@@ -286,7 +288,7 @@ class App(customtkinter.CTk):
         
         #tooltips
         tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file",
-                    "save_button": "Save the current image\n- Add a file type, standard is '.png'\n- Images can be saved in a plain format (without the axis) by checking 'Plot settings' -> 'Save plain images'\n- The image format can be chosen via 'Plot settings' -> 'Canvas Size'. Make sure to maximize the application window, otherwise the ratio can be altered by a large sidebar",
+                    "save_button": "Save the current image or current data\n- Image file types: .png, .jpg, .pdf\n- Data file types: .dat, .txt, .csv\n- Images can be saved in a plain format (without the axis) by checking 'Plot settings' -> 'Save plain images'\n- The image format can be chosen via 'Plot settings' -> 'Canvas Size'. Make sure to maximize the application window, otherwise the ratio can be altered by a large sidebar",
                     "set_button":       "Open the Plot settings window\n- Top: Image Plot settings\n- Bottom Line Plot settings\n- Side: Boolean settings",
                     "plot_button":      "Reset and reinitialize the plot \n- delete all previous multiplots",
                     "reset_button":     "Reset and reinitialize the plot \n- delete all previous multiplots",
@@ -427,6 +429,7 @@ class App(customtkinter.CTk):
             for widget_key, widget in self.listnames.items():
                 widget.destroy()
             self.plot_counter = 1
+            self.sub_plot_counter = 1
             plt.close(self.fig)
             
         self.ax_container = []
@@ -483,10 +486,15 @@ class App(customtkinter.CTk):
         
         # multiplots but in several subplots
         if self.replot and (self.rows != 1 or self.cols != 1):
-            if self.plot_counter > self.rows*self.cols: return
-            self.ax_container.append(self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter))
-            self.ax1 = self.ax_container[-1]
-            self.ax1.set_prop_cycle(cycler(color=self.get_colormap(self.cmap)))
+            if self.sub_plot_counter >= float(self.ent_subplot.get()) or self.plot_counter == 1:
+                if self.plot_counter > self.rows*self.cols: return
+                self.ax_container.append(self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter))
+                self.ax1 = self.ax_container[-1]
+                self.ax1.set_prop_cycle(cycler(color=self.get_colormap(self.cmap)))
+                self.sub_plot_counter = 1
+            else: 
+                self.plot_counter -= 1
+                self.sub_plot_counter += 1
         # multiplot but same axis, no image plot!
         elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter == 1) or not self.replot:
             self.ax1 = self.fig.add_subplot(1,1,1)
@@ -694,12 +702,13 @@ class App(customtkinter.CTk):
         self.data = cv2.imdecode(np.fromfile(file_path, np.uint8), cv2.IMREAD_UNCHANGED)
         # if the image has color channels, make sure they have the right order, if all channels are the same, reduce it to one channel
         if len(self.data.shape) == 3:
+            print("color image")
             self.data = cv2.cvtColor(self.data, cv2.COLOR_BGR2RGB)
 
             b,g,r = self.data[:,:,0], self.data[:,:,1], self.data[:,:,2]
             if (b==g).all() and (b==r).all():
                 self.data = self.data[...,0]
-            else:
+            elif self.convert_rgb_to_gray.get():
                 self.data = 0.2989 * r + 0.5870 * g + 0.1140 * b
 
         # create dictionary of the plot key word arguments
@@ -978,16 +987,18 @@ class App(customtkinter.CTk):
             self.multiplot_title = App.create_label( self.settings_frame,column=0, row=row, text="Multiplot Grid", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
             self.ent_rows, self.ent_rows_text = App.create_entry( self.settings_frame,column=1, row=row+1, width=50, text="rows")
             self.ent_cols, self.ent_cols_text = App.create_entry( self.settings_frame,column=3, row=row+1, width=50, text="columns")
+            self.ent_subplot, self.ent_subplot_text = App.create_entry( self.settings_frame,column=1, row=row+2, width=50, text="subplots")
             self.settings_frame.grid()
             self.addplot_button.grid() 
             self.reset_button.grid()
             self.plot_button.grid_remove()
 
+            self.ent_subplot.insert(0,str(1))
             self.ent_rows.insert(0,str(self.rows))
             self.ent_cols.insert(0,str(self.cols))
         else:
             self.plot_button.grid()
-            for name in ["ent_rows","ent_rows_text","ent_cols","ent_cols_text","reset_button","addplot_button","multiplot_title"]:
+            for name in ["ent_rows","ent_rows_text","ent_cols","ent_cols_text","reset_button","addplot_button","multiplot_title","ent_subplot","ent_subplot_text"]:
                 getattr(self, name).grid_remove()
             self.close_settings_window()
             # reset number of rows and cols for plotting to single plot value
@@ -1279,13 +1290,18 @@ class App(customtkinter.CTk):
 
     def save_figure(self):
         file_name = customtkinter.filedialog.asksaveasfilename()
-        if (self.image_plot and self.save_plain_image.get()):
+        if (self.image_plot and self.save_plain_image.get() and file_name.endswith((".pdf",".png",".jpg",".jpeg",".PNG",".JPG",".svg"))):
             if self.uselims_button.get(): 
                 plt.imsave(file_name, self.data[int(self.y_l):int(self.y_r),int(self.x_l):int(self.x_r)], cmap=self.cmap_imshow)
             else: 
                 plt.imsave(file_name, self.data, cmap=self.cmap_imshow)
-        else:
+        elif file_name.endswith((".pdf",".png",".jpg",".jpeg",".PNG",".JPG",".svg")): 
             self.fig.savefig(file_name, bbox_inches='tight')
+        elif file_name.endswith((".dat",".txt",".csv")):
+            if self.image_plot:
+                np.savetxt(file_name, self.data.astype(int), fmt='%i')
+            else:
+                np.savetxt(file_name, self.data)
 
     def open_file(self, file_path):
         try:
@@ -1410,7 +1426,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.convert_pixels_button  = App.create_switch(self, column=4, row=5, text="Convert Pixels",   command=lambda: self.toggle_boolean(self.app.convert_pixels))
         self.scale_switch_button    = App.create_switch(self, column=4, row=6, text="Use Scalebar",     command=lambda: self.toggle_boolean(self.app.use_scalebar))
         self.cbar_switch_button     = App.create_switch(self, column=4, row=7, text="Use Colorbar",     command=lambda: self.toggle_boolean(self.app.use_colorbar))
-        self.save_plain_img_button  = App.create_switch(self, column=4, row=8, text="Save plain images",command=lambda: self.toggle_boolean(self.app.save_plain_image))
+        self.convert_rgb_button     = App.create_switch(self, column=4, row=8, text="Convert RGB to gray",command=lambda: self.toggle_boolean(self.app.convert_rgb_to_gray))
+        self.save_plain_img_button  = App.create_switch(self, column=4, row=9, text="Save plain images",command=lambda: self.toggle_boolean(self.app.save_plain_image))
         self.hide_params_button     = App.create_switch(self, column=4, row=11, text="Hide fit params",  command=lambda: self.toggle_boolean(self.app.display_fit_params_in_plot))
         self.norm_switch_button     = App.create_switch(self, column=4, row=12, text="Normalize 'Area'", command=lambda: self.toggle_boolean(self.app.change_norm_to_area))
         self.grid_lines_button      = App.create_switch(self, column=4, row=13, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
@@ -1489,9 +1506,10 @@ class SettingsWindow(customtkinter.CTkToplevel):
         if self.app.convert_pixels.get() == True: self.convert_pixels_button.select()
         if self.app.display_fit_params_in_plot.get() == False: self.hide_params_button.select()
         if self.app.change_norm_to_area.get() == True: self.norm_switch_button.select()
+        if self.app.convert_rgb_to_gray.get(): self.convert_rgb_button.select()
         if self.app.save_plain_image.get(): self.save_plain_img_button.select()
         if self.app.use_grid_lines.get(): self.grid_lines_button.select()
-        if self.app.hide_ticks.get(): self.hide_ticks.select()
+        if self.app.hide_ticks.get(): self.hide_ticks_button.select()
 
     # reset to defaul values
     def reset_values(self):
