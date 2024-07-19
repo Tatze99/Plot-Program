@@ -43,7 +43,7 @@ version_number = "24/06"
 plt.style.use('default')
 matplotlib.rc('font', family='serif')
 matplotlib.rc('font', serif='Times New Roman')
-file_type_names = ('.csv', '.dat', '.txt', '.png', '.jpg', '.jpeg', '.spec', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm')
+file_type_names = ('.csv', '.dat', '.txt', '.png', '.jpg', '.jpeg', '.spec', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm', '.lvm')
 image_type_names = ('png','.jpg', '.jpeg', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm')
 sequential_colormaps = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper','Purples', 'Blues', 'Greens', 'Oranges', 'Reds','twilight', 'hsv', 'rainbow', 'jet', 'turbo', 'gnuplot', 'brg']
 
@@ -165,6 +165,7 @@ class App(customtkinter.CTk):
         self.title("Graph interactive editor for smooth visualization GIES v."+version_number)
         self.geometry("1280x720")
         self.replot = False
+        self.initialize_variables()
         self.initialize_ui_images()
         self.initialize_ui()
         self.initialize_plot_has_been_called = False
@@ -174,7 +175,6 @@ class App(customtkinter.CTk):
         # hide the multiplot button
         self.addplot_button.grid_remove() 
         self.reset_button.grid_remove()
-        self.initialize_variables()
         
     def initialize_ui_images(self):
         self.img_settings = customtkinter.CTkImage(dark_image=Image.open(os.path.join(Standard_path,"ui_images","options.png")), size=(15, 15))
@@ -186,6 +186,7 @@ class App(customtkinter.CTk):
         
     def initialize_variables(self):
         self.ax1 = None
+        self.ax2 = None
         self.plot_counter = 1
         self.color = "#1a1a1a" # toolbar
         self.reset_plots = True
@@ -197,6 +198,7 @@ class App(customtkinter.CTk):
         self.canvas_width = 17 #cm
         self.label_settings = "smart"
         self.ticks_settings = "smart"
+        self.multiplot_row = 9
 
         # line plot settings
         self.linestyle='-'
@@ -212,6 +214,8 @@ class App(customtkinter.CTk):
         self.cmap_length = 10
         self.single_color = 'tab:blue'
         self.sub_plot_counter = 1
+        self.sub_plot_value = 1
+        self.first_ax2 = True
         
         # image plot settings
         self.cmap_imshow="magma"
@@ -275,7 +279,7 @@ class App(customtkinter.CTk):
         self.multiplot_button = App.create_switch(frame, text="Multiplot",  command=self.multiplot,   column=0, row=7, padx=20, pady=(10,5))
         self.uselabels_button = App.create_switch(frame, text="Use labels", command=self.use_labels,  column=0, row=8, padx=20)
         self.uselims_button   = App.create_switch(frame, text="Use limits", command=self.use_limits,  column=0, row=9, padx=20)
-        self.fit_button       = App.create_switch(frame, text="Use fit",    command=lambda: (self.open_widget(FitWindow), self.initialize), column=0, row=10, padx=20)
+        self.fit_button       = App.create_switch(frame, text="Use fit",    command=lambda: self.open_fit_window(FitWindow), column=0, row=10, padx=20)
         self.normalize_button = App.create_switch(frame, text="Normalize",  command=self.initialize,    column=0, row=11, padx=20)
         self.lineout_button   = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
         self.FFT_button       = App.create_switch(frame, text="FFT",  command=self.fourier_trafo,    column=0, row=13, padx=20)
@@ -314,6 +318,8 @@ class App(customtkinter.CTk):
         self.settings_frame = customtkinter.CTkFrame(self, width=1, height=600, corner_radius=0)
         self.settings_frame.grid(row=0, column=4, rowspan=999, sticky="nesw")
         self.columnconfigure(2,weight=1)
+        self.two_axis_button = App.create_switch(self.settings_frame, command=None, text="2nd axis", column=2, row=self.multiplot_row+2, columnspan=2, padx=20, pady=(10,5))
+        self.two_axis_button.grid_remove()
         # self.columnconfigure(1,weight=1)
         
         self.appearance_mode_label = App.create_label(frame, text="Appearance Mode:", row=17, column=0, padx=20, pady=(10, 0), sticky="w")
@@ -325,7 +331,6 @@ class App(customtkinter.CTk):
         #dropdown menu
         self.optmenu = self.create_combobox(values=filelist, text="File name",row=1, column=2, columnspan=2, width=600, sticky="w")
         if not filelist == []: self.optmenu.set(filelist[0])
-
 
     def create_label(self, row, column, width=20, text=None, anchor='e', sticky='e', textvariable=None, padx=(5,5), pady=None, font=None, columnspan=1, fg_color=None, **kwargs):
         label = customtkinter.CTkLabel(self, text=text, textvariable=textvariable, width=width, anchor=anchor, font=font, fg_color=fg_color,  **kwargs)
@@ -410,6 +415,11 @@ class App(customtkinter.CTk):
     #############################################################
 
     def initialize(self):
+        if not self.initialize_plot_has_been_called:
+            self.initialize_plot_has_been_called = True
+            for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button", "FFT_button"]:
+                getattr(self, name).configure(state="enabled")
+
         if self.lineout_button.get():
             self.initialize_lineout(self.choose_ax_button.get())
         elif self.FFT_button.get():
@@ -421,28 +431,22 @@ class App(customtkinter.CTk):
         
         # Clear the previous plot content
         if self.ax1 is not None:
+            if self.ax2 is not None: self.ax2.clear()
+            self.ax2 = None
+            self.first_ax2 = True
             self.ax1.clear()  
             self.canvas.get_tk_widget().destroy()
             self.toolbar.destroy()
-            for widget_key, widget in self.lists.items():
-                widget.destroy()
-            for widget_key, widget in self.listnames.items():
-                widget.destroy()
             self.plot_counter = 1
             self.sub_plot_counter = 1
             plt.close(self.fig)
             
         self.ax_container = []
-        self.lists = {}
-        self.listnames = {}
-        if not self.initialize_plot_has_been_called:
-            self.initialize_plot_has_been_called = True
-            for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button", "FFT_button"]:
-                getattr(self, name).configure(state="enabled")
             
         if self.replot and not self.lineout_button.get() and not self.FFT_button.get():
             self.rows=float(self.ent_rows.get())
             self.cols=float(self.ent_cols.get())
+            self.sub_plot_value = float(self.ent_subplot.get())
         
         # self.canvas.get_tk_widget().grid(row=2, column=2, columnspan=2)
         if self.canvas_ratio == None:
@@ -476,6 +480,7 @@ class App(customtkinter.CTk):
         
     def plot(self):
         file_path = os.path.join(self.folder_path.get(), self.optmenu.get())
+        ax = "ax1"
 
         # Decide if there is an image to process or a data file
         self.image_plot_prev = self.image_plot
@@ -484,9 +489,10 @@ class App(customtkinter.CTk):
         else:
             self.image_plot = False
         
+        if self.fit_button.get() and self.image_plot and not self.lineout_button.get(): self.fit_button.toggle()
         # multiplots but in several subplots
         if self.replot and (self.rows != 1 or self.cols != 1):
-            if self.sub_plot_counter >= float(self.ent_subplot.get()) or self.plot_counter == 1:
+            if self.sub_plot_counter >= self.sub_plot_value or self.plot_counter == 1:
                 if self.plot_counter > self.rows*self.cols: return
                 self.ax_container.append(self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter))
                 self.ax1 = self.ax_container[-1]
@@ -511,20 +517,27 @@ class App(customtkinter.CTk):
             if not self.data_table_button.get():
                 try:
                     self.data = np.array(read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
-                    # print("pandas")
                 except: 
-                    # print("numpy")
                     self.data = np.loadtxt(file_path)
             else: 
                 self.data = []
-            line_container = self.make_line_plot("data", "ax1")
+
+            if self.multiplot_button.get():
+                if self.two_axis_button.get():
+                    if self.first_ax2:
+                        self.ax2 = self.ax1.twinx()
+                        self.ax2._get_lines = self.ax1._get_lines
+                        self.first_ax2 = False
+                    ax = "ax2"
+    
+            line_container = self.make_line_plot("data", ax)
 
         # if self.uselims_button.get() and self.image_plot != self.image_plot_prev:
         #         xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
         #         self.xlim_slider.set([xlim_min, xlim_max])
         #         self.ylim_slider.set([ylim_min, ylim_max])
 
-        self.plot_axis_parameters("ax1")
+        self.plot_axis_parameters(ax)
         
         self.update_plot(None)
 
@@ -590,7 +603,6 @@ class App(customtkinter.CTk):
 
             if self.function_entry.get() != "":
                 x = np.linspace(float(self.xval_min_entry.get()), float(self.xval_max_entry.get()),500)
-                print(float(self.xval_min_entry.get()), float(self.xval_max_entry.get()),x)
                 globals_dict = {"np": np, "x": x}
                 y = eval(self.function_entry.get(), globals_dict)
                 self.data = np.vstack((x,y)).T
@@ -634,14 +646,12 @@ class App(customtkinter.CTk):
         # axis.fill_between(data[:,0], moving_average(data[:, 1]-data[:,2], self.moving_average), moving_average(data[:, 1]+data[:,2], self.moving_average), alpha=0.1)
         #########
         if self.uselabels_button.get() and (self.ent_legend.get() != "" or self.legend_name is not None): 
-            axis.legend(**self.legend_type)
-
-        # create the list
-        # if not self.data_table_button.get():
-        #     self.listnames["self.my_listname{}".format(self.plot_counter)] = App.create_label(self.tabview.tab("Data Table"), width=100, text=self.optmenu.get(),sticky='w', row=0, column=1, pady=(0,0), padx=10)
-        #     self.lists["self.my_frame{}".format(self.plot_counter)] = App.create_table(self.tabview.tab("Data Table"), data=data, width=300, sticky='ns', row=1, column=1, pady=(20,10), padx=10)
-        # for widget_key, widget in self.lists.items():
-            # widget.configure(width=min(300,0.75*self.tabview.winfo_width()/(1.1*self.plot_counter+1)))
+            if self.ax2 is not None:
+                lines, labels = self.ax1.get_legend_handles_labels()
+                lines2, labels2 = self.ax2.get_legend_handles_labels()
+                self.ax1.legend(lines+lines2, labels+labels2, **self.legend_type)
+            else:
+                axis.legend(**self.legend_type)
 
         # create the fit
         if self.use_fit == 1 and not(self.FFT_button.get() and ax=="ax1") and (not self.image_plot or self.fit_button.get()):
@@ -702,7 +712,6 @@ class App(customtkinter.CTk):
         self.data = cv2.imdecode(np.fromfile(file_path, np.uint8), cv2.IMREAD_UNCHANGED)
         # if the image has color channels, make sure they have the right order, if all channels are the same, reduce it to one channel
         if len(self.data.shape) == 3:
-            print("color image")
             self.data = cv2.cvtColor(self.data, cv2.COLOR_BGR2RGB)
 
             b,g,r = self.data[:,:,0], self.data[:,:,1], self.data[:,:,2]
@@ -746,6 +755,12 @@ class App(customtkinter.CTk):
 
     def update_plot(self, val):
         if self.uselims_button.get() == 1: 
+            
+            if self.two_axis_button.get():
+                ax = self.ax2
+            else:
+                ax = self.ax1 
+
             self.update_slider_limits()
             self.x_l, self.x_r = self.xlim_slider.get()
             self.y_l, self.y_r = self.ylim_slider.get()
@@ -764,22 +779,22 @@ class App(customtkinter.CTk):
                         box.insert(0,str(round(getattr(self,limit),4-len(str(int(getattr(self,limit)))))))
 
             if self.image_plot: # display images
-                self.ax1.set_xlim(left=float(self.x_l), right=float(self.x_r))
-                self.ax1.set_ylim(bottom=float(self.y_l), top=float(self.y_r))
+                ax.set_xlim(left=float(self.x_l), right=float(self.x_r))
+                ax.set_ylim(bottom=float(self.y_l), top=float(self.y_r))
 
             else: # line plot
 
-                self.ax1.set_xlim(left=float(  self.x_l - 0.05 * (self.x_r - self.x_l)), right=float(self.x_r + 0.05 * (self.x_r - self.x_l)))
-                self.ax1.set_ylim(bottom=float(self.y_l - 0.05 * (self.y_r - self.y_l)), top=float(  self.y_r + 0.05 * (self.y_r - self.y_l)))
+                ax.set_xlim(left=float(  self.x_l - 0.05 * (self.x_r - self.x_l)), right=float(self.x_r + 0.05 * (self.x_r - self.x_l)))
+                ax.set_ylim(bottom=float(self.y_l - 0.05 * (self.y_r - self.y_l)), top=float(  self.y_r + 0.05 * (self.y_r - self.y_l)))
                 
                 if (self.plot_type == "semilogx" or self.plot_type == "loglog"):
                     xlim_l = calc_log_value(self.x_l - 0.05 * (self.x_r - self.x_l), np.min(abs(self.data[:,0])), np.max(self.data[:,0]))
                     xlim_r = calc_log_value(self.x_r + 0.05 * (self.x_r - self.x_l), np.min(abs(self.data[:,0])), np.max(self.data[:,0]))
-                    self.ax1.set_xlim(left=float(xlim_l), right=float(xlim_r))
+                    ax.set_xlim(left=float(xlim_l), right=float(xlim_r))
                 if (self.plot_type == "semilogy" or self.plot_type == "loglog"):
                     ylim_l = calc_log_value(self.y_l - 0.05 * (self.y_r - self.y_l), np.min(abs(self.data[:,1])), np.max(self.data[:,1]))
                     ylim_r = calc_log_value(self.y_r + 0.05 * (self.y_r - self.y_l), np.min(abs(self.data[:,1])), np.max(self.data[:,1]))
-                    self.ax1.set_ylim(bottom=float(ylim_l), top=float(ylim_r))
+                    ax.set_ylim(bottom=float(ylim_l), top=float(ylim_r))
 
         if self.FFT_button.get():
             pass
@@ -789,7 +804,7 @@ class App(customtkinter.CTk):
                 self.fit_xmax_line.set_xdata([self.fit_window.fit_borders_slider.get()[1]])
             except:
                 if self.lineout_button.get() or self.FFT_button.get():
-                    self.create_fit_border_lines("ax2")
+                    self.create_fit_border_lines("ax_second")
                 else:
                     self.create_fit_border_lines("ax1")
             
@@ -836,6 +851,7 @@ class App(customtkinter.CTk):
         
         if self.replot and (self.rows != 1 or self.cols != 1):
             self.plot_counter -= 1
+            self.sub_plot_counter = float('inf')
             self.ax_container[-1].set_visible(False)
             self.ax_container.pop()
             self.ax1 = self.ax_container[-1]
@@ -915,7 +931,7 @@ class App(customtkinter.CTk):
                 # create the entry objects "self.xlim_lbox" ...
                 setattr(self, lim_lbox, App.create_entry(self.settings_frame, row=row+i+1, column=1, width=50))
                 setattr(self, lim_rbox, App.create_entry(self.settings_frame, row=row+i+1, column=4, width=50))
-                setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=new_value_min, to=new_value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), columnspan=2, init_value=[value_min, value_max]))
+                setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=new_value_min, to=new_value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), number_of_steps=1000, columnspan=2, init_value=[value_min, value_max]))
 
                 # get the name of the created object, first the entry, second the slider
                 entryl_widget = getattr(self,lim_lbox)
@@ -983,12 +999,13 @@ class App(customtkinter.CTk):
                 self.rows = 2
             self.cols = 2
 
-            row = 9
+            row = self.multiplot_row
             self.multiplot_title = App.create_label( self.settings_frame,column=0, row=row, text="Multiplot Grid", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
             self.ent_rows, self.ent_rows_text = App.create_entry( self.settings_frame,column=1, row=row+1, width=50, text="rows")
             self.ent_cols, self.ent_cols_text = App.create_entry( self.settings_frame,column=3, row=row+1, width=50, text="columns")
             self.ent_subplot, self.ent_subplot_text = App.create_entry( self.settings_frame,column=1, row=row+2, width=50, text="subplots")
             self.settings_frame.grid()
+            self.two_axis_button.grid()
             self.addplot_button.grid() 
             self.reset_button.grid()
             self.plot_button.grid_remove()
@@ -998,7 +1015,7 @@ class App(customtkinter.CTk):
             self.ent_cols.insert(0,str(self.cols))
         else:
             self.plot_button.grid()
-            for name in ["ent_rows","ent_rows_text","ent_cols","ent_cols_text","reset_button","addplot_button","multiplot_title","ent_subplot","ent_subplot_text"]:
+            for name in ["ent_rows","ent_rows_text","ent_cols","ent_cols_text","reset_button","addplot_button","multiplot_title","ent_subplot","ent_subplot_text", "two_axis_button"]:
                 getattr(self, name).grid_remove()
             self.close_settings_window()
             # reset number of rows and cols for plotting to single plot value
@@ -1020,22 +1037,22 @@ class App(customtkinter.CTk):
                 self.multiplot_button.toggle()
             self.replot = True
             self.multiplot_button.configure(state="disabled")
-            
 
             self.cols = 2
             self.rows = 1
             self.lineout_xvalue = int(len(self.data[0,:])/2)
             self.lineout_yvalue = int(len(self.data[:,0])/2)
+
             self.settings_frame.grid()
             row = 12
             self.lineout_title    = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+3, values=[" x-line ", " y-line "], command=self.plot_lineout, columnspan=2, padx=(10,10), sticky="w")
-            self.angle_slider     = App.create_slider(self.settings_frame, from_=-90, to=90, command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=170, padx=(0,10), columnspan=3, number_of_steps=181)
-            self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=max(len(self.data[:,0]), len(self.data[0,:])), command= lambda val=None: self.plot_lineout(val), row=row+2, column =2, width=170, padx=(0,10), columnspan=3)
+            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+3, values=[" x-line ", " y-line "], command=self.initialize_lineout, columnspan=2, padx=(10,10), sticky="w")
+            self.angle_slider     = App.create_slider(self.settings_frame, from_=-90, to=90, command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=170, padx=(0,10), columnspan=3, number_of_steps=180)
+            self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=len(self.data[0,:]), command= lambda val=None: self.plot_lineout(val), row=row+2, column =2, width=170, padx=(0,10), columnspan=3)
             self.line_entry, self.ent_line_text = App.create_entry(self.settings_frame, row=row+2, column=1, width=50, text="line")
             self.angle_entry, self.ent_angle_text = App.create_entry(self.settings_frame, row=row+1, column=1, width=50, text="angle")
             self.save_lineout_button = App.create_button(self.settings_frame, column = 3, row=row+3, text="Save Lineout", command= lambda: self.save_data_file(self.lineout_data), width=80, columnspan=2)
-            self.line_entry.insert(0,str(int(len(self.data[:,0])/2)))
+            self.line_slider.set(self.lineout_yvalue)
             self.line_entry.bind("<KeyRelease>", lambda event, val=self.line_entry, slider_widget=self.line_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
             self.angle_entry.insert(0,str(0))
             self.angle_entry.bind("<KeyRelease>", lambda event, val=self.angle_entry, slider_widget=self.angle_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
@@ -1062,21 +1079,21 @@ class App(customtkinter.CTk):
             self.y_lineout_max = int(self.ylim_slider.get()[1])
         else:
             self.x_lineout_min = 0
-            self.x_lineout_max = len(self.data[0,:])
+            self.x_lineout_max = len(self.data[:,0])
             self.y_lineout_min = 0
-            self.y_lineout_max = len(self.data[:,0])
+            self.y_lineout_max = len(self.data[0,:])
 
-        asp_image = len(self.data[self.y_lineout_min:self.y_lineout_max,0]) / len(self.data[0,self.x_lineout_min:self.x_lineout_max])
+        asp_image = len(self.data[self.x_lineout_min:self.x_lineout_max,0]) / len(self.data[0,self.y_lineout_min:self.y_lineout_max])
 
         if val == " x-line ":
             if self.line_slider.get() >= self.y_lineout_max: self.line_slider.set(self.y_lineout_max-1)
             self.lineout_data = np.array([self.data[int(self.line_slider.get()),self.x_lineout_min:self.x_lineout_max]]).T
-            self.line_slider.configure(from_=self.y_lineout_min, to=self.y_lineout_max-1)
+            self.line_slider.configure(from_=self.y_lineout_min, to=self.y_lineout_max-1, number_of_steps = len(self.data[0,:])-1)
             
         elif val == " y-line ":
             if self.line_slider.get() >= self.x_lineout_max: self.line_slider.set(self.x_lineout_max-1)
             self.lineout_data = np.array([self.data[self.y_lineout_min:self.y_lineout_max,int(self.line_slider.get())]]).T
-            self.line_slider.configure(from_=self.x_lineout_min, to=self.x_lineout_max-1)
+            self.line_slider.configure(from_=self.x_lineout_min, to=self.x_lineout_max-1, number_of_steps = len(self.data[:,0])-1)
 
         (x1, y1), (x2, y2) = self.get_lineout_data()
         self.axline = self.ax1.plot([x1, x2],[y1, y2], 'tab:blue')[0]
@@ -1087,17 +1104,17 @@ class App(customtkinter.CTk):
         self.line_entry.delete(0, 'end')
         self.line_entry.insert(0,str(int(self.line_slider.get())))
         
-        self.ax2 = self.fig.add_subplot(1,2,2)
+        self.ax_second = self.fig.add_subplot(1,2,2)
         max_value = np.max(self.data)
 
-        self.lineout_plot = self.make_line_plot("lineout_data", "ax2")
-        self.plot_axis_parameters("ax2")
+        self.lineout_plot = self.make_line_plot("lineout_data", "ax_second")
+        self.plot_axis_parameters("ax_second")
 
-        # asp = np.diff(self.ax2.get_xlim())[0] / np.diff(self.ax2.get_ylim())[0]*asp_image
-        asp = np.diff(self.ax2.get_xlim())[0] / max_value*asp_image
+        # asp = np.diff(self.ax_second.get_xlim())[0] / np.diff(self.ax_second.get_ylim())[0]*asp_image
+        asp = np.diff(self.ax_second.get_xlim())[0] / max_value*asp_image
 
-        self.ax2.set_aspect(abs(asp))
-        self.ax2.set_ylim(0, max_value)
+        self.ax_second.set_aspect(abs(asp))
+        self.ax_second.set_ylim(0, max_value)
 
         self.canvas.draw()
 
@@ -1115,7 +1132,7 @@ class App(customtkinter.CTk):
 
         # Extract the values along the line, using cubic interpolation
         brightness_value = scipy.ndimage.map_coordinates(self.data, np.vstack((y,x)))
-        print(brightness_value)
+        # print(brightness_value)
 
         scale = 1
         if self.convert_pixels.get():
@@ -1192,18 +1209,18 @@ class App(customtkinter.CTk):
         
         # ensure that the interpolated spectrum looks the same
         # self.ax1.plot(3e8/(freq_points*1e-9), interp_spec)
-        self.ax2 = self.fig.add_subplot(1,2,2)
+        self.ax_second = self.fig.add_subplot(1,2,2)
 
         self.FFT_data = self.Fourier_transform("data")
-        self.FFT_plot = self.make_line_plot("FFT_data", "ax2")
-        # self.FFT_plot, = self.ax2.plot(self.FFT_data[:,0],self.FFT_data[:,1], **self.plot_kwargs)
+        self.FFT_plot = self.make_line_plot("FFT_data", "ax_second")
+        # self.FFT_plot, = self.ax_second.plot(self.FFT_data[:,0],self.FFT_data[:,1], **self.plot_kwargs)
 
         # Determine the width of the displayed FT window
         argmax = np.argmax(self.FFT_data[:,1])
         width = np.max(np.argwhere(self.FFT_data[:,1] > 1e-3*np.max(self.FFT_data[:,1]))) - argmax + int(0.01*len(self.FFT_data[:,1])/(self.padd_zeros_slider.get()+1))
         # width = abs(np.argmax(self.FFT_data[:,1]) - np.argmin(abs(self.FFT_data[:,1]-0.5*np.max(self.FFT_data[:,1]))))
-        # self.ax2.set_xlim(self.FFT_data[argmax-10*half_width,0], self.FFT_data[argmax+10*half_width,0])
-        self.ax2.set_xlim(self.FFT_data[argmax-width, 0], self.FFT_data[argmax+width, 0])
+        # self.ax_second.set_xlim(self.FFT_data[argmax-10*half_width,0], self.FFT_data[argmax+10*half_width,0])
+        self.ax_second.set_xlim(self.FFT_data[argmax-width, 0], self.FFT_data[argmax+width, 0])
 
         self.canvas.draw()
     
@@ -1343,13 +1360,19 @@ class App(customtkinter.CTk):
         else:
             self.toplevel_window[var].focus()  # if window exists focus it
             
-    def open_widget(self,cls):
+    def open_fit_window(self,cls):
         if self.fit_button.get() == 1:
-            self.fit_window = cls(self)  # create window if its None or destroyed
+            if self.image_plot and not self.lineout_button.get(): 
+                self.fit_button.deselect()
+            else:   
+                self.fit_window = cls(self)  # create window if its None or destroyed
+                self.initialize()
         else:
             self.fit_window.close_window()
             self.close_settings_window()
             self.fit_window.destroy()
+            self.fit_xmin_line.remove()
+            self.fit_xmax_line.remove()
             
     def on_closing(self):
         # quit() # Python 3.12 works
