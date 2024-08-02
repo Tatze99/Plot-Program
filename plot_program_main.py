@@ -26,9 +26,10 @@ from scipy.optimize import curve_fit as cf
 from scipy.interpolate import interp1d
 from inspect import signature # get number of arguments of a function
 import cv2 # image fourier transform
-from PIL import Image
+from PIL import Image, ImageTk
 from sys import exit as sysexit
 from natsort import natsorted
+import io
 
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -39,7 +40,7 @@ def toggle_bool(event=None):
     global tooltips_enabled
     tooltips_enabled = not tooltips_enabled
 
-version_number = "24/06"
+version_number = "24/08"
 plt.style.use('default')
 matplotlib.rc('font', family='serif')
 matplotlib.rc('font', serif='Times New Roman')
@@ -61,6 +62,9 @@ def lorentz(x, a, w0, gamma):
 
 def gauss(x, a, b, c, d):
     return a * np.exp(-(x - b)**2 / (2 * c**2)) + d
+
+def gauss3(x, a, b, c, d):
+    return a * np.exp(-abs(x - b)**3 / (2 * c**2)) + d
 
 def sqrt(x, a, b, c):
     return a * np.sqrt(b * x) + c
@@ -188,7 +192,9 @@ class App(customtkinter.CTk):
         self.ax1 = None
         self.ax2 = None
         self.plot_counter = 1
+        self.plot_index = 1
         self.color = "#1a1a1a" # toolbar
+        self.text_color = "white"
         self.reset_plots = True
         # self.reset_xlims = customtkinter.BooleanVar(value=False)
         # self.reset_ylims = customtkinter.BooleanVar(value=False)
@@ -243,6 +249,7 @@ class App(customtkinter.CTk):
         self.convert_rgb_to_gray = customtkinter.BooleanVar(value=False)
         self.rows = 1
         self.cols = 1
+        self.mouse_clicked_on_canvas = False
         
         
     # user interface, gets called when the program starts 
@@ -280,18 +287,19 @@ class App(customtkinter.CTk):
         self.uselabels_button = App.create_switch(frame, text="Use labels", command=self.use_labels,  column=0, row=8, padx=20)
         self.uselims_button   = App.create_switch(frame, text="Use limits", command=self.use_limits,  column=0, row=9, padx=20)
         self.fit_button       = App.create_switch(frame, text="Use fit",    command=lambda: self.open_fit_window(FitWindow), column=0, row=10, padx=20)
-        self.normalize_button = App.create_switch(frame, text="Normalize",  command=self.initialize,    column=0, row=11, padx=20)
+        self.normalize_button = App.create_switch(frame, text="Normalize",  command=lambda: self.plot,    column=0, row=11, padx=20)
         self.lineout_button   = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
         self.FFT_button       = App.create_switch(frame, text="FFT",  command=self.fourier_trafo,    column=0, row=13, padx=20)
         # self.Advanced_button  = App.create_switch(frame, text="Advanced Settings",  command=self.advanced_settings,    column=0, row=16, padx=20)
         self.data_table_button= App.create_switch(self.tabview.tab("Data Table"), text="Plot data table & custom data", command=None, row=0, column=0, padx=20)
-        self.data_table = App.create_table(self.tabview.tab("Data Table"), data=np.vstack((np.linspace(0,5,100),np.linspace(0,5,100)**2)).T, width=300, sticky='ns', row=1, column=0, pady=(20,10), padx=10)
+        self.mid_axis_button  = App.create_switch(self.tabview.tab("Data Table"), text="middle axis lines", command=None, row=1, column=0, padx=20)
+        self.data_table = App.create_table(self.tabview.tab("Data Table"), data=np.vstack((np.linspace(0,5,100),np.linspace(0,5,100)**2)).T, width=300, sticky='ns', row=2, column=0, pady=(20,10), padx=10)
         self.xval_min_entry, self.xlims_entry_label      = App.create_entry(self.tabview.tab("Data Table"), row=0, column=3, width=90, text="x-limits", placeholder_text="x min")
         self.xval_max_entry                              = App.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=90, placeholder_text="x max")
         self.function_entry, self.function_entry_label   = App.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)", sticky="nw", sticky_label="ne")
         
         #tooltips
-        tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file",
+        self.tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file",
                     "save_button": "Save the current image or current data\n- Image file types: .png, .jpg, .pdf\n- Data file types: .dat, .txt, .csv\n- Images can be saved in a plain format (without the axis) by checking 'Plot settings' -> 'Save plain images'\n- The image format can be chosen via 'Plot settings' -> 'Canvas Size'. Make sure to maximize the application window, otherwise the ratio can be altered by a large sidebar",
                     "set_button":       "Open the Plot settings window\n- Top: Image Plot settings\n- Bottom Line Plot settings\n- Side: Boolean settings",
                     "plot_button":      "Reset and reinitialize the plot \n- delete all previous multiplots",
@@ -299,7 +307,7 @@ class App(customtkinter.CTk):
                     "addplot_button":   "Plot the currently selected file",
                     "prev_button":      "Plot the previous file in the list",
                     "next_button":      "Plot the next file in the list",
-                    "multiplot_button": "Create multiple plots in one figure \n- choose rows = 1, cols = 1 for single graph multiplots\n- Press CTRL+Z to delete the previous plot",
+                    "multiplot_button": "Create multiple plots in one figure \n- choose rows = 1, cols = 1 for single graph multiplots\n- Press CTRL+Z to delete the previous plot\n- You can click on the subplots to replot them or set the limits",
                     "uselabels_button": "Create x,y-labels, add a legend\n- Legend settings: choose location, add file name to legend",
                     "uselims_button":   "Choose x,y-limits for line and image plots\n- x-limits stay the same when resetting the plot\n- y-limits will change to display all figures\n- the limits can be set with the sliders or typed in manually", 
                     "fit_button":       "Fit a function to the current data set\n- initial fit parameters can be set when the fit does not converge\n- use slider to fit only parts of the function\n- the textbox can be hidden via the 'Plot settings' -> 'Hide fit params'",
@@ -309,7 +317,7 @@ class App(customtkinter.CTk):
                     "data_table_button": "Check this to plot own custom data in the window below\n- columns must be separated by a space or tab (not comma or semicolon)\n- decimal separator: point and comma works\n- You can also plot data by using numpy functions, the argument must be called 'x'."
                     }
         
-        for name, description in tooltips.items():
+        for name, description in self.tooltips.items():
             setattr(self, name+"_ttp", CreateToolTip(getattr(self, name), description))
 
         for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button", "FFT_button"]:
@@ -332,8 +340,8 @@ class App(customtkinter.CTk):
         self.optmenu = self.create_combobox(values=filelist, text="File name",row=1, column=2, columnspan=2, width=600, sticky="w")
         if not filelist == []: self.optmenu.set(filelist[0])
 
-    def create_label(self, row, column, width=20, text=None, anchor='e', sticky='e', textvariable=None, padx=(5,5), pady=None, font=None, columnspan=1, fg_color=None, **kwargs):
-        label = customtkinter.CTkLabel(self, text=text, textvariable=textvariable, width=width, anchor=anchor, font=font, fg_color=fg_color,  **kwargs)
+    def create_label(self, row, column, width=20, text=None, anchor='e', sticky='e', textvariable=None, padx=(5,5), image=None, pady=None, font=None, columnspan=1, fg_color=None, **kwargs):
+        label = customtkinter.CTkLabel(self, text=text, textvariable=textvariable, width=width, image=image, anchor=anchor, font=font, fg_color=fg_color,  **kwargs)
         label.grid(row=row, column=column, sticky=sticky, columnspan=columnspan, padx=padx, pady=pady, **kwargs)
         return label
 
@@ -437,8 +445,10 @@ class App(customtkinter.CTk):
             self.ax1.clear()  
             self.canvas.get_tk_widget().destroy()
             self.toolbar.destroy()
-            self.plot_counter = 1
-            self.sub_plot_counter = 1
+            self.plot_counter = 1      # counts how many plots there are
+            self.plot_index = 1        # index of the currently used plot
+            self.sub_plot_counter = 1  # number of subplots
+            self.mouse_clicked_on_canvas = False
             plt.close(self.fig)
             
         self.ax_container = []
@@ -453,6 +463,7 @@ class App(customtkinter.CTk):
             self.fig = plt.figure(constrained_layout=True, dpi=150)  
             self.canvas = FigureCanvasTkAgg(self.fig, master=self.tabview.tab("Show Plots"))
             self.canvas.get_tk_widget().pack(fill="both", expand=True)
+            self.canvas.mpl_connect("button_press_event", self.on_click)
         else:
             self.fig = plt.figure(figsize=(self.canvas_width/2.54,self.canvas_width/(self.canvas_ratio*2.54)),constrained_layout=True, dpi=150)  
             self.canvas = FigureCanvasTkAgg(self.fig, master=self.tabview.tab("Show Plots"))
@@ -480,7 +491,6 @@ class App(customtkinter.CTk):
         
     def plot(self):
         file_path = os.path.join(self.folder_path.get(), self.optmenu.get())
-        ax = "ax1"
 
         # Decide if there is an image to process or a data file
         self.image_plot_prev = self.image_plot
@@ -490,18 +500,30 @@ class App(customtkinter.CTk):
             self.image_plot = False
         
         if self.fit_button.get() and self.image_plot and not self.lineout_button.get(): self.fit_button.toggle()
+        if self.lineout_button.get() and not self.image_plot: self.lineout_button.toggle()
+        if not self.multiplot_button.get() and self.ax1 is not None: self.ax1.remove()   # reset the plot for normalize but use it normally in multiplot
+
         # multiplots but in several subplots
         if self.replot and (self.rows != 1 or self.cols != 1):
             if self.sub_plot_counter >= self.sub_plot_value or self.plot_counter == 1:
                 if self.plot_counter > self.rows*self.cols: return
-                self.ax_container.append(self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter))
-                self.ax1 = self.ax_container[-1]
+                ax1 = self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter)
+                if self.mouse_clicked_on_canvas:
+                    self.ax1.remove()
+                    self.ax_container[self.plot_counter-1] = (ax1, None)
+                    self.mouse_clicked_on_canvas = False
+                else: 
+                    self.ax_container.append((ax1, None)) # Add primary axis with no twin yet
+                self.ax1 = ax1
                 self.ax1.set_prop_cycle(cycler(color=self.get_colormap(self.cmap)))
                 self.sub_plot_counter = 1
+                self.first_ax2 = True
+                self.two_axis_button.deselect()
+                self.plot_index = self.plot_counter
             else: 
                 self.plot_counter -= 1
                 self.sub_plot_counter += 1
-        # multiplot but same axis, no image plot!
+        # single plot or multiplot but same axis, no image plot!
         elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter == 1) or not self.replot:
             self.ax1 = self.fig.add_subplot(1,1,1)
             self.ax1.set_prop_cycle(cycler(color=self.get_colormap(self.cmap)))
@@ -509,41 +531,29 @@ class App(customtkinter.CTk):
         # create the plot depending if we have a line or image plot
         if self.image_plot: self.make_image_plot(file_path)
         else:
-            if self.lineout_button.get():
-                self.lineout_button.toggle()
-                self.initialize_plot()
-                return
             file_decimal = self.open_file(file_path)
             if not self.data_table_button.get():
                 try:
                     self.data = np.array(read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64))
+                    print("plot with pandas")
                 except: 
                     self.data = np.loadtxt(file_path)
+                    print("plot with np.loadtxt")
             else: 
                 self.data = []
-
-            if self.multiplot_button.get():
-                if self.two_axis_button.get():
-                    if self.first_ax2:
-                        self.ax2 = self.ax1.twinx()
-                        self.ax2._get_lines = self.ax1._get_lines
-                        self.first_ax2 = False
-                    ax = "ax2"
     
-            line_container = self.make_line_plot("data", ax)
+            line_container = self.make_line_plot("data", "ax1")
 
-        # if self.uselims_button.get() and self.image_plot != self.image_plot_prev:
-        #         xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
-        #         self.xlim_slider.set([xlim_min, xlim_max])
-        #         self.ylim_slider.set([ylim_min, ylim_max])
-
-        self.plot_axis_parameters(ax)
         
         self.update_plot(None)
 
         if self.uselims_button.get() and not self.image_plot:
             self.ylim_slider.set([self.ymin, self.ymax])
-        self.plot_counter += 1
+
+        if (self.rows == 1 and self.cols == 1):
+            self.plot_counter += 1
+        else:
+            self.plot_counter = len(self.ax_container) + 1
 
     def get_colormap(self, cmap):  # for line plots not image plots
 
@@ -565,17 +575,20 @@ class App(customtkinter.CTk):
         
         
 
-    def plot_axis_parameters(self, axis):
-        axis = getattr(self, axis)
+    def plot_axis_parameters(self, ax, plot_counter=1):
+        axis = getattr(self, ax)
 
-        last_row = self.plot_counter > self.cols*(self.rows-1)
-        first_col = (self.plot_counter-1) % self.cols == 0
+        last_row = plot_counter > self.cols*(self.rows-1)
+        first_col = (plot_counter-1) % self.cols == 0
+        # put the second axis on the right side of the plot
+        if ax == "ax2":
+            first_col = (plot_counter+self.cols) % self.cols == 0
 
         # if the hide_ticks option has been chosen in the multiplot, settings window
         if self.ticks_settings == "no ticks":
             axis.set_xticks([])
             axis.set_yticks([])
-        elif self.ticks_settings == "smart":
+        elif self.ticks_settings == "smart" and not self.mid_axis_button.get():
             if not last_row: 
                 axis.set_xticklabels([])
             if not first_col:
@@ -590,13 +603,34 @@ class App(customtkinter.CTk):
 
         # place labels only on the left and bottom plots (if there are multiplots)
         if self.uselabels_button.get() == 1:
-            if last_row or self.label_settings == "default": 
+            if last_row or self.label_settings == "default" or self.mid_axis_button.get(): 
                 axis.set_xlabel(self.ent_xlabel.get())
-            if first_col or self.label_settings == "default": 
+            if first_col or self.label_settings == "default" or self.mid_axis_button.get(): 
                 axis.set_ylabel(self.ent_ylabel.get())
 
+        if self.mid_axis_button.get():
+            axis.spines[['top', 'right']].set_visible(False)
+            axis.spines[['left', 'bottom']].set_position('zero')
+            axis.xaxis.set_tick_params(direction='inout')
+            axis.yaxis.set_tick_params(direction='inout')
+            axis.plot((1), (0), ls="", marker=">", ms=5, color="k",transform=axis.get_yaxis_transform(), clip_on=False)
+            axis.plot((0), (1), ls="", marker="^", ms=5, color="k",transform=axis.get_xaxis_transform(), clip_on=False)
         
     def make_line_plot(self, dat, ax):
+
+        if self.multiplot_button.get():
+                if self.sub_plot_value == 1:
+                    self.two_axis_button.configure(state="disabled")
+                else: 
+                    self.two_axis_button.configure(state="enabled")
+                if self.two_axis_button.get():
+                    if self.first_ax2:
+                        ax2 = self.ax1.twinx()
+                        ax2._get_lines = self.ax1._get_lines  # color cycle of ax1
+                        self.ax_container[-1] = (self.ax1, ax2) # Update the container with the twin axis 
+                        self.ax2 = ax2
+                        self.first_ax2 = False
+                    ax = "ax2"
 
         if self.data_table_button.get():
             self.data = self.read_table_data(self.data_table.get("0.0","end"))
@@ -612,7 +646,7 @@ class App(customtkinter.CTk):
         for row in self.data:
             self.data_table.insert("end", " \t ".join(map(str, np.round(row,4))) + "\n")
 
-
+        # Display 1D data
         if len(self.data[0, :]) == 1:
             self.data = np.vstack((range(len(self.data)), self.data[:, 0])).T
         
@@ -659,6 +693,8 @@ class App(customtkinter.CTk):
 
         if self.FFT_button.get() and ax == "ax1":
             self.create_FFT_border_lines(ax)
+
+        self.plot_axis_parameters(ax, plot_counter = self.plot_index)
 
         return plot_object
             
@@ -751,6 +787,8 @@ class App(customtkinter.CTk):
         # use a colorbar
         if self.use_colorbar.get():
             self.cbar = self.fig.colorbar(plot, fraction=0.045, pad=0.01)
+
+        self.plot_axis_parameters("ax1", plot_counter = self.plot_index)
         
 
     def update_plot(self, val):
@@ -849,14 +887,14 @@ class App(customtkinter.CTk):
     
     def control_z(self):
         
-        if self.replot and (self.rows != 1 or self.cols != 1):
+        if self.replot and (self.rows != 1 or self.cols != 1) and self.plot_counter > 2:
             self.plot_counter -= 1
             self.sub_plot_counter = float('inf')
-            self.ax_container[-1].set_visible(False)
-            self.ax_container.pop()
-            self.ax1 = self.ax_container[-1]
-            
+            ax1, ax2 = self.ax_container.pop()
+            ax1.remove()
+            if ax2: ax2.remove()
 
+            (self.ax1, self.ax2) = self.ax_container[-1]
         
         elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter > 2):
             self.ax1.get_lines()[-1].remove()
@@ -892,17 +930,8 @@ class App(customtkinter.CTk):
     ############################################################################################
     """
 
-    # def advanced_settings(self):
-    #     if self.Advanced_button.get() and self.uselims_button.get(): 
-    #         self.reset_xlims_button  = App.create_switch(self.settings_frame, text="reset x limits",  command=lambda: self.toggle_boolean(self.reset_xlims), column=1,columnspan=2, row=4+3, padx=20)
-    #         self.reset_ylims_button  = App.create_switch(self.settings_frame, text="reset y limits",  command=lambda: self.toggle_boolean(self.reset_ylims), column=1,columnspan=2, row=4+4, padx=20)
-    #     elif not self.Advanced_button.get() and self.uselims_button.get():
-    #         self.reset_xlims_button.grid_remove()
-    #         self.reset_ylims_button.grid_remove()
-
     def use_limits(self):
         if not self.initialize_plot_has_been_called: return
-        # if self.Advanced_button.get(): self.advanced_settings()
         if self.uselims_button.get() == 1:
             row = 4 # 4 from the use_labels
             self.settings_frame.grid()
@@ -1132,7 +1161,6 @@ class App(customtkinter.CTk):
 
         # Extract the values along the line, using cubic interpolation
         brightness_value = scipy.ndimage.map_coordinates(self.data, np.vstack((y,x)))
-        # print(brightness_value)
 
         scale = 1
         if self.convert_pixels.get():
@@ -1263,7 +1291,8 @@ class App(customtkinter.CTk):
         
     def save_data_file(self, data):
         file_name = customtkinter.filedialog.asksaveasfilename()
-        np.savetxt(file_name, data, fmt="%.4e")
+        if file_name != "":
+            np.savetxt(file_name, data, fmt="%.4e")
         
     def update_slider_limits(self):
         if self.image_plot:
@@ -1272,7 +1301,7 @@ class App(customtkinter.CTk):
         else:
             self.xlim_slider.configure(from_=self.xmin-(self.xmax-self.xmin)*0.2, to=self.xmax+(self.xmax-self.xmin)*0.2)  
             self.ylim_slider.configure(from_=self.ymin-(self.ymax-self.ymin)*0.2, to=self.ymax+(self.ymax-self.ymin)*0.2)      
-    
+
     def normalize(self):
         if self.image_plot:
             self.data = self.data * 0.5/np.mean(self.data)*self.enhance_value
@@ -1339,8 +1368,10 @@ class App(customtkinter.CTk):
         customtkinter.set_appearance_mode(new_appearance_mode)
         if new_appearance_mode == "Light":
             self.color = "#f2f2f2"
+            self.text_color = "black"
         else:
             self.color = "#1a1a1a"
+            self.text_color = "white"
         if self.initialize_plot_has_been_called: 
             self.toolbar.pack_forget()
             self.toolbar = self.create_toolbar()
@@ -1375,9 +1406,31 @@ class App(customtkinter.CTk):
             self.fit_xmax_line.remove()
             
     def on_closing(self):
-        # quit() # Python 3.12 works
-        self.destroy() # Python 3.9 on Laptop
-        sysexit()
+        for name, description in self.tooltips.items():
+            tooltip = getattr(self, name+"_ttp")
+            tooltip.cleanup()
+
+        quit() # Python 3.12 works
+        # self.destroy() # Python 3.9 on Laptop
+        # sysexit()
+
+    def on_click(self, event):
+        for i, (ax1,ax2) in enumerate(self.ax_container):
+            if ax1.in_axes(event):
+                # highlighting the subplot
+                ax1.set_facecolor('lightgrey')
+                self.ax1 = ax1 
+                self.ax2 = ax2
+                self.plot_counter = i+1
+                self.mouse_clicked_on_canvas = True
+            else:
+                ax1.set_facecolor('white')
+        
+        # if no axes are clicked
+        if event.inaxes == None:
+            self.plot_counter = len(self.ax_container) + 1
+            self.mouse_clicked_on_canvas = False
+        self.canvas.draw_idle()
         
         
 """
@@ -1387,10 +1440,10 @@ class App(customtkinter.CTk):
 
 """
 
-class SettingsWindow(customtkinter.CTkToplevel):
+class SettingsWindow(customtkinter.CTkToplevel): 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.geometry("600x600")
+        self.geometry("600x650")
         self.title("Plot Settings")
         self.app = app
 
@@ -1459,7 +1512,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.cmap_length_list.configure(state="disabled")
         self.single_colors_list.grid_remove()
         #tooltips
-        tooltips = {"canvas_ratio_list":"Determine the size of the canvas. This is useful for saving the plots in a reproducible manner\n- Auto: Resize the canvas to fill the full screen (standard)\n- 4:3 ratio: Set the size of the canvas in 4:3 format, the width [cm] can be set with the entry box on the right",
+        self.tooltips = {"canvas_ratio_list":"Determine the size of the canvas. This is useful for saving the plots in a reproducible manner\n- Auto: Resize the canvas to fill the full screen (standard)\n- 4:3 ratio: Set the size of the canvas in 4:3 format, the width [cm] can be set with the entry box on the right",
                     "canvas_width":     "Set the width of the canvas in cm.\n- Works only, if Canvas Size is not set to 'Auto'",
                     "pixel_size":       "Set the size of a single pixel\n- the tick labels can be converted to real lengths by checking 'Convert Pixels'.",
                     "label_dist":       "Set, at which points a new label is placed", 
@@ -1484,7 +1537,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
                     "hide_ticks_button": "hide all ticks and tick-labels"
                     }
         
-        for name, description in tooltips.items():
+        for name, description in self.tooltips.items():
             setattr(self, name+"_ttp", CreateToolTip(getattr(self, name), description))
 
         # Slider labels    
@@ -1699,15 +1752,23 @@ class FitWindow(customtkinter.CTkFrame):
         self.app = app
         self.row = 20
         self.widget_dict = {}
-        self.labels_title = App.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row , column=1, columnspan=5, padx=20, pady=(20, 5),sticky=None)
-        self.function = {'Gaussian': gauss, 'Lorentz': lorentz, 'Linear': linear, 'Quadratic': quadratic, 'Exponential': exponential, 'Square Root': sqrt}
+        self.labels_title = App.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row , column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.function = {'Gaussian': gauss, 'Gaussian 3rd': gauss3, 'Lorentz': lorentz, 'Linear': linear, 'Quadratic': quadratic, 'Exponential': exponential, 'Square Root': sqrt}
+
+         #Step 3: Convert Matplotlib image to Pillow image
+        latex_code = r'E=mc^2'
+        image = self.render_latex_to_image(latex_code)
+        # photo = ImageTk.PhotoImage(image)
+        self.image_formula = customtkinter.CTkImage(dark_image=image, size=(image.width, image.height))
+
         self.function_label = App.create_label(app.settings_frame, text="", column=1, row=self.row +1, width=80, columnspan=4, anchor='e', sticky="w")
-        self.function_label_list = {'Gaussian': "f(x) = a·exp(-(x-b)²/(2·c²)) + d", 
-                                    'Lorentz': "f(x) = a/[(x²-b²)² + c²·b²]",
-                                    'Linear': "f(x) = a·x + b", 
-                                    'Quadratic': "f(x) = a·x² + b·x + c", 
-                                    'Exponential': "f(x) = a·exp(b·x) + c", 
-                                    'Square Root': "f(x) = a·sqrt(b·x) + c"}
+        self.function_label_list = {'Gaussian': ["f(x) = a·exp(-(x-b)²/(2·c²)) + d", r"f(x) = a \cdot \exp\left(-\,\dfrac{(x-b)^2}{(2·c^2)}\right) + d"], 
+                                    'Gaussian 3rd': ["f(x) = a·exp(-|x-b|³/(2·c²)) + d", r"f(x) = a \cdot \exp\left(-\,\dfrac{|x-b|^3}{(2·c^2)}\right) + d"], 
+                                    'Lorentz': ["f(x) = a/[(x²-b²)² + c²·b²]", r"f(x) = \dfrac{a}{(x^2 - b^2)^2 + c^2 \cdot b^2}"],
+                                    'Linear': ["f(x) = a·x + b", r"f(x) = a\cdot x + b"], 
+                                    'Quadratic': ["f(x) = a·x² + b·x + c", r"f(x) = a\cdot x^2 + b\cdot x+c"], 
+                                    'Exponential': ["f(x) = a·exp(b·x) + c", r"f(x) = a\cdot \exp(b\cdot x) +c"], 
+                                    'Square Root': ["f(x) = a·sqrt(b·x) + c", r"f(x) = a\sqrt{b\cdot x} + c"]}
         self.function_list_label = App.create_label(app.settings_frame,text="Fit", column=0,row=self.row +2, sticky="e")
         self.function_list = App.create_combobox(app.settings_frame, values=list(self.function.keys()), command=self.create_params, width=110, column=1, row=self.row +2, columnspan=2, sticky="w")
         self.function_list.set('Gaussian')
@@ -1717,19 +1778,52 @@ class FitWindow(customtkinter.CTkFrame):
         else:
             data = app.data
 
+        self.save_fit_button = App.create_button(app.settings_frame, column = 3, row=self.row+2, text="Save fit", command= lambda: app.save_data_file(np.vstack([data[:,0], app.fit_plot(app.function, app.params, data)]).T), width=80, columnspan=2)
         if (not app.image_plot or app.lineout_button.get()):
-            self.fit_borders_slider = App.create_range_slider(app.settings_frame, from_=np.min(data[:,0]), to=np.max(data[:,0]), command= lambda val=None: app.update_plot(val), row=self.row+2, column =3, width=120, padx=(0,0), columnspan=2, init_value=[np.min(data[:,0]), np.max(data[:,0])])
+            self.fit_borders_slider = App.create_range_slider(app.settings_frame, from_=np.min(data[:,0]), to=np.max(data[:,0]), command= lambda val=None: app.update_plot(val), row=self.row+3, column =1, width=180, padx=(10,10), columnspan=4, init_value=[np.min(data[:,0]), np.max(data[:,0])])
 
         self.params = []
         self.error = []
         self.create_params('Gaussian')
         # self.set_fit_params()
         app.settings_frame.grid()
+    
+    #########################################################
+    # Step 2: Function to render LaTeX using Matplotlib
+    def render_latex_to_image(self, latex_code):
+        fig, ax = plt.subplots()
+        text = ax.text(0.5, 0.5, f'${latex_code}$', fontsize=10, ha='center', va='center', color=app.text_color)
+        ax.axis('off')
+
+        # Draw the canvas to update the text position
+        fig.canvas.draw()
+        # Get the bounding box of the text
+        bbox = text.get_window_extent()
+        # Convert bbox to display coordinates
+        bbox_display = bbox.transformed(fig.dpi_scale_trans.inverted())
+        # Get the width and height of the bounding box
+        width, height = bbox_display.width, bbox_display.height
+        # Adjust figure size to fit the text exactly
+        fig.set_size_inches(width, height)
         
+        buf = io.BytesIO()
+        # enable transparent background for creating images of equations
+        plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, transparent=True)
+        buf.seek(0)
+        
+        image = Image.open(buf)
+        plt.close(fig)
+        
+        return image
+    ##################################################################
+
     def create_params(self, function_name):
         # set the label of the function, e.g f(x) = a*x+b
         self.function_name = function_name
-        self.function_label.configure(text = self.function_label_list[self.function_list.get()])
+        # self.function_label.configure(text = self.function_label_list[self.function_list.get()])
+        latex_code = self.function_label_list[self.function_list.get()][1]
+        image = self.render_latex_to_image(latex_code)
+        self.function_label.configure(image=customtkinter.CTkImage(dark_image=image, size=(image.width, image.height)))
         
         #Determine the number of arguments of the used function
         self.number_of_args = len(signature(self.function[function_name]).parameters) - 1
@@ -1750,9 +1844,9 @@ class FitWindow(customtkinter.CTkFrame):
         except: pass
         
         if arg_number < self.number_of_args:
-            self.widget_dict[f'fit_{name}'], self.widget_dict[f'fitlabel_{name}'] = App.create_entry(app.settings_frame, column=1, row=self.row + arg_number + 3, width=80, placeholder_text="0", sticky='w', columnspan=2, text=name)
+            self.widget_dict[f'fit_{name}'], self.widget_dict[f'fitlabel_{name}'] = App.create_entry(app.settings_frame, column=1, row=self.row + arg_number + 4, width=80, placeholder_text="0", sticky='w', columnspan=2, text=name)
             self.widget_dict[f'str_var_{name}'] = customtkinter.StringVar() # StringVar to hold the label value
-            self.widget_dict[f'fitted_{name}'] = App.create_label(app.settings_frame, textvariable=self.widget_dict[f'str_var_{name}'], column=3, width=50, row=self.row + arg_number + 3, padx=(0, 20), columnspan=2)
+            self.widget_dict[f'fitted_{name}'] = App.create_label(app.settings_frame, textvariable=self.widget_dict[f'str_var_{name}'], column=3, width=50, row=self.row + arg_number + 4, padx=(0, 20), columnspan=2)
     
     def set_fitted_values(self, params, error):
         for i,name in enumerate(["a","b","c","d","FWHM"]):
@@ -1775,7 +1869,7 @@ class FitWindow(customtkinter.CTkFrame):
     
     # display values in the textbox, function is used in app.plot()
     def get_fitted_labels(self):
-        string = self.function_label_list[self.function_list.get()] 
+        string = self.function_label_list[self.function_list.get()][0] 
         
         for i,name in enumerate(['a','b','c','d', 'FWHM']):
             if i >= self.number_of_args: break
@@ -1792,7 +1886,7 @@ class FitWindow(customtkinter.CTkFrame):
                 self.app.params.append(value)
             except ValueError:
                 self.app.params.append(1)
-                if (self.function_name == "Gaussian" or self.function_name == "Lorentz") and i == 1:
+                if (self.function_name in ["Gaussian","Gaussian 3rd","Lorentz"]) and i == 1:
                     self.app.params[1] = data[np.argmax(data[:,1]),0]
                     self.app.params[0] = np.max(data[:,1])
 
@@ -1889,6 +1983,10 @@ class CreateToolTip(object):
         self.tw= None
         if tw:
             tw.destroy()
+    
+    def cleanup(self):
+        self.unschedule()
+        self.hidetip()
 
 
 if __name__ == "__main__":
