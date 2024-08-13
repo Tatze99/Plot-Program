@@ -19,7 +19,7 @@ import scipy.ndimage
 # from matplotlib.figure import Figure
 import ctypes
 # import io
-from pandas import read_table
+# from pandas import read_table
 import matplotlib
 from cycler import cycler
 from scipy.optimize import curve_fit as cf
@@ -27,9 +27,9 @@ from scipy.interpolate import interp1d
 from inspect import signature # get number of arguments of a function
 import cv2 # image fourier transform
 from PIL import Image, ImageTk
-from sys import exit as sysexit
+# from sys import exit as sysexit
 from natsort import natsorted
-import io
+import io # used for latex display buffer
 
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -173,6 +173,30 @@ def flatten(data):
             yield from flatten(item)
         else:
             yield item
+
+def determine_delimiter_and_column_count(file_path, skip_row):
+    with open(file_path, 'r') as file:
+        # Skip lines until the desired line
+        for _ in range(skip_row):
+            file.readline()
+        # Read the first line
+        target_line = file.readline().strip()
+        
+        # Potential delimiters
+        delimiters = [';', '\t', ' ']
+        if '.' in target_line:
+            delimiters.append(',')
+        delimiter = None
+        max_columns = 0
+        
+        # Determine the delimiter by checking which one results in the most columns
+        for d in delimiters:
+            columns = target_line.split(d)
+            if len(columns) > max_columns:
+                max_columns = len(columns)
+                delimiter = d
+        
+        return delimiter, max_columns
 
 class App(customtkinter.CTk):
     def __init__(self):
@@ -586,11 +610,20 @@ class App(customtkinter.CTk):
         # create the plot depending if we have a line or image plot
         if self.image_plot: self.make_image_plot(file_path)
         else:
-            file_decimal = self.open_file(file_path)
             if not self.data_table_button.get():
                 try:
-                    self.data = np.array(read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64, header=None))
-                    print("plot with pandas")
+                    skip_rows = self.skip_rows(file_path)
+                    file_decimal = self.open_file(file_path)
+                    delimiter, maxcolumns = determine_delimiter_and_column_count(file_path, skip_rows)
+                    # print(f"skip rows = {skip_rows}, file decimal = {file_decimal}, delimiter = {delimiter}, max columns = {maxcolumns}")
+
+                    # Custom converter to replace commas with dots
+                    comma_to_dot = lambda x: float(x.decode('utf-8').replace(file_decimal, '.'))
+
+                    # Load the data, applying the converter to all columns
+                    self.data = np.genfromtxt(file_path, skip_header=skip_rows, delimiter=delimiter, converters={i: comma_to_dot for i in range(maxcolumns)})
+                    print("plot with np.genfromtext")
+                    # self.data = np.array(read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64, header=None))
                 except: 
                     self.data = np.loadtxt(file_path)
                     print("plot with np.loadtxt")
@@ -737,14 +770,14 @@ class App(customtkinter.CTk):
                 y = eval(self.function_entry.get(), globals_dict)
                 self.data = np.vstack((x,y)).T
 
+        # Display 1D data
+        if self.data.ndim == 1:
+            self.data = np.vstack((range(len(self.data)), self.data)).T
+
         # Display data in the data table
         self.data_table.delete("0.0", "end")  # delete all text
         for row in self.data:
             self.data_table.insert("end", " \t ".join(map(str, np.round(row,4))) + "\n")
-
-        # Display 1D data
-        if len(self.data[0, :]) == 1:
-            self.data = np.vstack((range(len(self.data)), self.data[:, 0])).T
         
         data = getattr(self,dat)
         axis = getattr(self,ax)
