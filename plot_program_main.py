@@ -18,18 +18,15 @@ from matplotlib.colors import ListedColormap
 import scipy.ndimage
 # from matplotlib.figure import Figure
 import ctypes
-# import io
-# from pandas import read_table
 import matplotlib
 from cycler import cycler
 from scipy.optimize import curve_fit as cf
 from scipy.interpolate import interp1d
 from inspect import signature # get number of arguments of a function
-import cv2 # image fourier transform
 from PIL import Image, ImageTk
-# from sys import exit as sysexit
 from natsort import natsorted
 import io # used for latex display buffer
+import logging
 
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -48,8 +45,8 @@ file_type_names = ('.csv', '.dat', '.txt', '.png', '.jpg', '.jpeg', '.spec', '.J
 image_type_names = ('png','.jpg', '.jpeg', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm')
 sequential_colormaps = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper','Purples', 'Blues', 'Greens', 'Oranges', 'Reds','twilight', 'hsv', 'rainbow', 'jet', 'turbo', 'gnuplot', 'brg']
 
-
-ctypes.windll.shcore.SetProcessDpiAwareness(1)
+# this causes problems at smaller screen sizes with scaled text size
+# ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
 Standard_path = os.path.dirname(os.path.abspath(__file__))
 filelist = natsorted([fname for fname in os.listdir(Standard_path) if fname.endswith(file_type_names)])
@@ -265,8 +262,6 @@ class App(customtkinter.CTk):
         self.color = "#212121" # toolbar
         self.text_color = "white"
         self.reset_plots = True
-        # self.reset_xlims = customtkinter.BooleanVar(value=False)
-        # self.reset_ylims = customtkinter.BooleanVar(value=False)
         self.legend_type = {'loc': 'best'}
         self.legend_name = slice(None, None)
         self.canvas_ratio = None #None - choose ratio automatically
@@ -426,6 +421,8 @@ class App(customtkinter.CTk):
 
         self.load_labels()
         self.load_multiplot()
+        self.load_lineout()
+        self.load_fourier_trafo()
 
     def create_label(self, row, column, width=20, text=None, anchor='e', sticky='e', textvariable=None, padx=(5,5), image=None, pady=None, font=None, columnspan=1, fg_color=None, **kwargs):
         label = customtkinter.CTkLabel(self, text=text, textvariable=textvariable, width=width, image=image, anchor=anchor, font=font, fg_color=fg_color,  **kwargs)
@@ -552,7 +549,6 @@ class App(customtkinter.CTk):
             self.rows=float(self.ent_rows.get())
             self.cols=float(self.ent_cols.get())
         
-        # self.canvas.get_tk_widget().grid(row=2, column=2, columnspan=2)
         dpi = 150
         if self.canvas_ratio == None:
             self.tabview.update_idletasks()  # Ensure the widget is updated to get the correct size
@@ -567,7 +563,6 @@ class App(customtkinter.CTk):
         else:
             if self.canvas_ratio == 0:
                 self.canvas_ratio = self.canvas_width/self.canvas_height
-            print(self.canvas_ratio)
 
             self.fig = plt.figure(figsize=(self.canvas_width/2.54,self.canvas_width/(self.canvas_ratio*2.54)),constrained_layout=True, dpi=dpi)  
             self.canvas = FigureCanvasTkAgg(self.fig, master=self.tabview.tab("Show Plots"))
@@ -648,18 +643,17 @@ class App(customtkinter.CTk):
                     skip_rows = self.skip_rows(file_path)
                     file_decimal = self.open_file(file_path)
                     delimiter, maxcolumns = determine_delimiter_and_column_count(file_path, skip_rows)
-                    # print(f"skip rows = {skip_rows}, file decimal = {file_decimal}, delimiter = {delimiter}, max columns = {maxcolumns}")
+                    logging.info(f"skip rows = {skip_rows}, file decimal = {file_decimal}, delimiter = '{delimiter}', max columns = {maxcolumns}")
 
-                    # Custom converter to replace commas with dots
+                    # Custom converter to replace commas with dots, for numpy v>2.0.0, you need to remove ".decode('utf-8')"
                     comma_to_dot = lambda x: float(x.decode('utf-8').replace(file_decimal, '.'))
 
                     # Load the data, applying the converter to all columns
                     self.data = np.genfromtxt(file_path, skip_header=skip_rows, delimiter=delimiter, converters={i: comma_to_dot for i in range(maxcolumns)})
-                    print("plot with np.genfromtext")
                     # self.data = np.array(read_table(file_path, decimal=file_decimal, skiprows=self.skip_rows(file_path), skip_blank_lines=True, dtype=np.float64, header=None))
                 except: 
                     self.data = np.loadtxt(file_path)
-                    print("plot with np.loadtxt")
+                    logging.error("np.genfromtxt was not succesfull, fallback to np.loadtxt")
             else: 
                 self.data = []
     
@@ -941,12 +935,17 @@ class App(customtkinter.CTk):
         for entry in self.column_dict:
             self.column_dict[entry].grid_remove()
 
-        self.data = cv2.imdecode(np.fromfile(file_path, np.uint8), cv2.IMREAD_UNCHANGED)
+        # Read file as binary
+        with open(file_path, 'rb') as f:
+            image_data = f.read()
+
+        # Convert to a NumPy array with np.frombuffer, Use io.BytesIO to simulate file opening and read it via matplotlib
+        self.data = plt.imread(io.BytesIO(np.frombuffer(image_data, np.uint8)))
+
         # if the image has color channels, make sure they have the right order, if all channels are the same, reduce it to one channel
         if len(self.data.shape) == 3:
-            self.data = cv2.cvtColor(self.data, cv2.COLOR_BGR2RGB)
 
-            b,g,r = self.data[:,:,0], self.data[:,:,1], self.data[:,:,2]
+            r,g,b = self.data[:,:,0], self.data[:,:,1], self.data[:,:,2]
             if (b==g).all() and (b==r).all():
                 self.data = self.data[...,0]
             elif self.convert_rgb_to_gray.get():
@@ -1265,11 +1264,23 @@ class App(customtkinter.CTk):
     #############################################################
     ######################## Lineout ############################
     #############################################################
-        
+    def load_lineout(self):
+        row = 12
+        self.lineout_title    = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+3, values=[" x-line ", " y-line "], command=self.initialize_lineout, columnspan=2, padx=(10,10), sticky="w")
+        self.angle_slider     = App.create_slider(self.settings_frame, from_=-90, to=90, command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=170, padx=(0,10), columnspan=3, number_of_steps=180)
+        self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=1, command= lambda val=None: self.plot_lineout(val), row=row+2, column =2, width=170, padx=(0,10), columnspan=3)
+        self.line_entry, self.ent_line_text = App.create_entry(self.settings_frame, row=row+2, column=1, width=50, text="line", textwidget=True)
+        self.angle_entry, self.ent_angle_text = App.create_entry(self.settings_frame, row=row+1, column=1, width=50, text="angle", textwidget=True)
+        self.save_lineout_button = App.create_button(self.settings_frame, column = 3, row=row+3, text="Save Lineout", command= lambda: self.save_data_file(self.lineout_data), width=80, columnspan=2)
+        self.angle_entry.insert(0,str(0))
+        self.lineout()
+
     def lineout(self):
         if self.image_plot == False:
             self.lineout_button.deselect()
 
+        widget_names = ["lineout_title", "line_entry", "line_slider", "ent_line_text", "choose_ax_button", "save_lineout_button", "angle_slider", "angle_entry", "ent_angle_text"]
         if self.lineout_button.get():
             self.display_fit_params_in_plot.set(False)
             if self.multiplot_button.get():
@@ -1283,25 +1294,16 @@ class App(customtkinter.CTk):
             self.lineout_yvalue = int(len(self.data[:,0])/2)
 
             self.settings_frame.grid()
-            row = 12
-            self.lineout_title    = App.create_label( self.settings_frame,column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-            self.choose_ax_button = App.create_segmented_button(self.settings_frame, column = 1, row=row+3, values=[" x-line ", " y-line "], command=self.initialize_lineout, columnspan=2, padx=(10,10), sticky="w")
-            self.angle_slider     = App.create_slider(self.settings_frame, from_=-90, to=90, command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=170, padx=(0,10), columnspan=3, number_of_steps=180)
-            self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=len(self.data[0,:]), init_val=self.lineout_yvalue, command= lambda val=None: self.plot_lineout(val), row=row+2, column =2, width=170, padx=(0,10), columnspan=3)
-            self.line_entry, self.ent_line_text = App.create_entry(self.settings_frame, row=row+2, column=1, width=50, text="line", textwidget=True)
-            self.angle_entry, self.ent_angle_text = App.create_entry(self.settings_frame, row=row+1, column=1, width=50, text="angle", textwidget=True)
-            self.save_lineout_button = App.create_button(self.settings_frame, column = 3, row=row+3, text="Save Lineout", command= lambda: self.save_data_file(self.lineout_data), width=80, columnspan=2)
+            [getattr(self, name).grid() for name in widget_names]
+            
             self.line_entry.bind("<KeyRelease>", lambda event, val=self.line_entry, slider_widget=self.line_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
-            self.angle_entry.insert(0,str(0))
+            self.line_slider.configure(to=len(self.data[0,:]))
+            self.line_slider.set(self.lineout_yvalue)
             self.angle_entry.bind("<KeyRelease>", lambda event, val=self.angle_entry, slider_widget=self.angle_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
             self.choose_ax_button.set(" y-line ")
             self.initialize_lineout(" y-line ")
         else:
-            try:
-                for name in ["lineout_title", "line_entry", "line_slider", "ent_line_text", "choose_ax_button", "save_lineout_button", "angle_slider", "angle_entry", "ent_angle_text"]:
-                    getattr(self, name).grid_remove()
-            except:
-                return
+            [getattr(self, name).grid_remove() for name in widget_names]
             self.multiplot_button.configure(state="enabled")
             self.replot = False
             self.close_settings_window()
@@ -1348,7 +1350,6 @@ class App(customtkinter.CTk):
         self.lineout_plot = self.make_line_plot("lineout_data", "ax_second")
         self.plot_axis_parameters("ax_second")
 
-        # asp = np.diff(self.ax_second.get_xlim())[0] / np.diff(self.ax_second.get_ylim())[0]*asp_image
         asp = np.diff(self.ax_second.get_xlim())[0] / max_value*asp_image
 
         self.ax_second.set_aspect(abs(asp))
@@ -1403,7 +1404,19 @@ class App(customtkinter.CTk):
     ############### Fouriertransformation #######################
     #############################################################
         
+    def load_fourier_trafo(self):
+        row = 15
+        self.FFT_title    = App.create_label( self.settings_frame,column=0, row=row, text="Fourier Transform", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.save_FFT_button = App.create_button(self.settings_frame, column = 3, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
+        self.padd_zeros_textval  = App.create_label( self.settings_frame,column=1, columnspan=2, row=row+1, text=str(0), sticky="n", anchor="n", fg_color="transparent")
+        self.settings_frame.rowconfigure(row+1, minsize=50)
+        self.padd_zeros_slider = App.create_slider(self.settings_frame, from_=0, to=10, command= self.update_FFT, row=row+1, column=1, columnspan=2, init_val=0, number_of_steps=10, width=120, text="padd 0's", padx=(10,0))
+        self.FFT_borders_slider = App.create_range_slider(self.settings_frame, from_=0, to=1, command= self.update_FFT, row=row+2, column =1, width=120, columnspan=2, text="FFT lims", padx=(10,0))
+        self.fourier_trafo()
+            
     def fourier_trafo(self):
+        widget_names = ["FFT_title", "save_FFT_button", "FFT_borders_slider", "padd_zeros_textval", "padd_zeros_slider"]
+
         if self.image_plot == True:
             self.FFT_button.deselect()
 
@@ -1421,20 +1434,14 @@ class App(customtkinter.CTk):
             self.cols = 2
             self.rows = 1
             self.settings_frame.grid()
-            row = 15
-            self.FFT_title    = App.create_label( self.settings_frame,column=0, row=row, text="Fourier Transform", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-            self.save_FFT_button = App.create_button(self.settings_frame, column = 3, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
-            self.padd_zeros_textval  = App.create_label( self.settings_frame,column=1, columnspan=2, row=row+1, text=str(0), sticky="n", anchor="n", fg_color="transparent")
-            self.settings_frame.rowconfigure(row+1, minsize=50)
-            self.padd_zeros_slider = App.create_slider(self.settings_frame, from_=0, to=10, command= self.update_FFT, row=row+1, column=1, columnspan=2, init_val=0, number_of_steps=10, width=120, text="padd 0's", padx=(10,0))
-            self.FFT_borders_slider = App.create_range_slider(self.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= self.update_FFT, row=row+2, column =1, width=120, columnspan=2, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])], text="FFT lims", padx=(10,0))
+            [getattr(self, name).grid() for name in widget_names]
+
+            self.FFT_borders_slider.configure(from_= np.min(self.data[:,0]), to=np.max(self.data[:,0]))
+            self.FFT_borders_slider.set([np.min(self.data[:,0]),np.max(self.data[:,0])])
+            
             self.initialize_FFT()
         else:
-            try:
-                for name in ["FFT_title", "save_FFT_button", "FFT_borders_slider", "padd_zeros_textval", "padd_zeros_slider"]:
-                    getattr(self, name).grid_remove()
-            except:
-                return
+            [getattr(self, name).grid_remove() for name in widget_names]
             self.multiplot_button.configure(state="enabled")
             self.lineout_button.configure(state="enabled")
             self.replot = False
@@ -1543,7 +1550,7 @@ class App(customtkinter.CTk):
                 break
             else:
                 skiprows += 1
-        if skiprows > 0: print(f">>>>>>>>>>>>\n There were {skiprows} head lines detected and skipped. \n<<<<<<<<<<<<")
+        if skiprows > 0: logging.info(f"There were {skiprows} head lines detected and skipped.")
         return skiprows
 
     def save_figure(self):
@@ -1566,7 +1573,7 @@ class App(customtkinter.CTk):
             with open(file_path, 'r') as file:
                 content = file.read()
         except Exception as e:
-            print(f"Error reading the file: {e}")
+            logging.error(f"Error reading the file: {e}")
             return
 
         if content.count('.') >= content.count(','):
@@ -1574,7 +1581,7 @@ class App(customtkinter.CTk):
         elif content.count('.') < content.count(','):
             return ','
         else:
-            print("No decimal separators (commas or dots) were found in the file.")
+            logging.warning("No decimal separators (commas or dots) were found in the file.")
     
     def change_appearance_mode_event(self, new_appearance_mode: str):
         customtkinter.set_appearance_mode(new_appearance_mode)
@@ -1622,9 +1629,9 @@ class App(customtkinter.CTk):
             tooltip = getattr(self, name+"_ttp")
             tooltip.cleanup()
 
-        quit() # Python 3.12 works
-        # self.destroy() # Python 3.9 on Laptop
-        # sysexit()
+        self.quit()    # Python 3.12 works
+        self.destroy() # needed for built exe
+
 
     def on_click(self, event):
         for i, (ax1,ax2) in enumerate(self.ax_container):
@@ -1638,7 +1645,7 @@ class App(customtkinter.CTk):
             else:
                 ax1.set_facecolor('white')
         
-        print(event)
+        logging.info(event)
         # if no axes are clicked
         if event.inaxes == None:
             self.plot_counter = len(self.ax_container) + 1
@@ -2097,7 +2104,6 @@ class FitWindow(customtkinter.CTkFrame):
 
         self.app.function = self.function[self.function_list.get()]
         self.app.use_fit = app.fit_button.get()
-        print(self.app.params)
         
     def close_window(self):
         for name in ["a","b","c","d"]:
@@ -2206,6 +2212,10 @@ class CustomToolbar(NavigationToolbar2Tk):
 
 
 if __name__ == "__main__":
+    level = logging.INFO
+    fmt = '[%(levelname)s] %(asctime)s - %(message)s'
+    logging.basicConfig(level=level, format=fmt)
+
     app = App()
     app.state('zoomed')
     app.protocol("WM_DELETE_WINDOW", app.on_closing)

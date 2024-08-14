@@ -5,5 +5,9 @@ untitled1.py
 *.pyc
 *.dat
 
+.venv/**
+output/**
+auto-py-to-exe.json
+
 !ui_images/**
 !documentation_images/**
