@@ -165,7 +165,39 @@ def get_border_points(x0, y0, angle, array_shape):
     
     return intersections
 
-    return round(x1), round(x2), round(y1), round(y2)
+def find_fwhm(xdata, ydata):
+    # Step 1: Find the maximum value and its index
+    max_y = np.max(ydata)
+    max_index = np.argmax(ydata)
+    
+    # Step 2: Calculate the half maximum
+    half_max = max_y / 2.0
+    
+    # Step 3: Find the index where ydata first crosses the half maximum on the left side of the peak
+    left_index = np.where(ydata[:max_index] <= half_max)[0]
+    if len(left_index) > 0:
+        left_index = left_index[-1]
+    else:
+        left_index = 0
+
+    # Step 4: Find the index where ydata first crosses the half maximum on the right side of the peak
+    right_index = np.where(ydata[max_index:] <= half_max)[0]
+    if len(right_index) > 0:
+        right_index = right_index[0] + max_index
+    else:
+        right_index = len(ydata) - 1
+
+    # Step 5: Interpolation to find the exact position of half maximum on both sides
+    x_left = xdata[left_index] + (xdata[left_index + 1] - xdata[left_index]) * \
+             (half_max - ydata[left_index]) / (ydata[left_index + 1] - ydata[left_index])
+
+    x_right = xdata[right_index - 1] + (xdata[right_index] - xdata[right_index - 1]) * \
+              (half_max - ydata[right_index - 1]) / (ydata[right_index] - ydata[right_index - 1])
+
+    # Step 6: Calculate the FWHM
+    fwhm = x_right - x_left
+    
+    return x_left, x_right, half_max, fwhm
 
 def flatten(data):
     for item in data:
@@ -261,6 +293,7 @@ class App(customtkinter.CTk):
         self.sub_plot_counter = 1
         self.sub_plot_value = 1
         self.first_ax2 = True
+        self.draw_FWHM_line = customtkinter.BooleanVar(value=False)
         
         # image plot settings
         self.cmap_imshow="magma"
@@ -366,7 +399,7 @@ class App(customtkinter.CTk):
                     "lineout_button": "Display a lineout function\n- only used for images, no multiplot possible", 
                     "FFT_button": "Display the |FT(f)|² of the data\n- limits of the Fourier window can be set\n- zero padding (factor determines number of zeros/x-array length)",
                     "data_table_button": "Check this to plot own custom data in the window below\n- columns must be separated by a space or tab (not comma or semicolon)\n- decimal separator: point and comma works\n- You can also plot data by using numpy functions, the argument must be called 'x'.",
-                    "ent_legend": "Add a Legend to the plot\n- Write '{name}' in the textbox if you want to add the file name to the legend.\n- The displayed file name can be customized in the legend settings."
+                    "ent_legend": "Add a Legend to the plot\n- Write '{name}' in the textbox if you want to add the file name to the legend.\n- The displayed file name can be customized in the legend settings.\n You can access more data information with the following keys:\n- {xmax},{ymax} - x,y coordinate of the maximum point\n- {fwhm} - FWHM around the maximum point\n- {x_res} - x-axis resolution"
                     }
         
         for name, description in self.tooltips.items():
@@ -684,8 +717,8 @@ class App(customtkinter.CTk):
             axis.minorticks_off()
 
         if self.use_grid_lines.get():
-            axis.grid(which="major", color='0.8', alpha=0)
-            axis.grid(which="minor", color='0.95', alpha=0)
+            axis.grid(which="minor", color='0.97', alpha=0)
+            axis.grid(which="major", color='0.85', alpha=0)
 
             if self.image_plot: alpha = 0.2
             else: alpha = 1
@@ -797,9 +830,6 @@ class App(customtkinter.CTk):
             marker = self.markers,
             linewidth = self.linewidth
             )
-        
-        if self.uselabels_button.get(): 
-            self.plot_kwargs["label"] = self.ent_legend.get().format(name=self.optmenu.get()[self.legend_name])
 
         if self.normalize_button.get(): self.normalize()
 
@@ -814,14 +844,27 @@ class App(customtkinter.CTk):
         plot = getattr(axis, "errorbar")
   
         for y_data in y_data_list:
+            if self.uselabels_button.get(): 
+                self.plot_kwargs["label"] = self.ent_legend.get().format(name=self.optmenu.get()[self.legend_name], 
+                                                                         ymax=np.max(y_data), 
+                                                                         xmax=x_data[np.argmax(y_data)], 
+                                                                         fwhm=find_fwhm(x_data,y_data)[-1], 
+                                                                         res_x=x_data[1]-x_data[0])
+
             line, cap, bar = plot(x_data, moving_average(y_data, self.moving_average), xerr=xerr, yerr=yerr, capsize=3, **self.plot_kwargs)
+
+            if self.draw_FWHM_line.get():
+                x_min, x_max, y_value, fwhm= find_fwhm(x_data,y_data)
+                FWHM_line, = axis.plot([x_min,x_max], [y_value, y_value], color="black")
+            else: 
+                FWHM_line = ()
             if yerr is not None and self.yerror_area_button.get(): 
                 fill = axis.fill_between(data[:,0], moving_average(y_data-yerr, self.moving_average), moving_average(y_data+yerr, self.moving_average), alpha=0.1)
                 for item in list(flatten(cap)): item.remove()
                 for item in list(flatten(bar)): item.remove()
             else: 
                 fill = ()
-            self.plot_container.append((line,cap,bar,fill))
+            self.plot_container.append((line,cap,bar,fill, FWHM_line))
             self.plot_counter += 1
 
         axis.set_yscale('log' if self.plot_type in ["semilogy", "loglog"] else 'linear')
@@ -1678,7 +1721,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.hide_params_button     = App.create_switch(self, column=4, row=11, text="Hide fit params",  command=lambda: self.toggle_boolean(self.app.display_fit_params_in_plot))
         self.norm_switch_button     = App.create_switch(self, column=4, row=12, text="Normalize 'Area'", command=lambda: self.toggle_boolean(self.app.change_norm_to_area))
         self.minor_ticks_button     = App.create_switch(self, column=4, row=2, text="Use Minor Ticks",  command=lambda: self.toggle_boolean(self.app.use_minor_ticks))
-        self.grid_lines_button      = App.create_switch(self, column=4, row=13, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
+        self.show_FWHM_button       = App.create_switch(self, column=4, row=13, text="Draw FWHM line", command=lambda: self.toggle_boolean(self.app.draw_FWHM_line))
+        self.grid_lines_button      = App.create_switch(self, column=4, row=14, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
         
         self.cmap_length_list.configure(state="disabled")
         self.single_colors_list.grid_remove()
@@ -1745,6 +1789,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         if self.app.save_plain_image.get(): self.save_plain_img_button.select()
         if self.app.use_grid_lines.get(): self.grid_lines_button.select()
         if self.app.use_minor_ticks.get(): self.minor_ticks_button.select()
+        if self.app.draw_FWHM_line.get(): self.show_FWHM_button.select()
 
     # reset to defaul values
     def reset_values(self):
