@@ -46,7 +46,7 @@ image_type_names = ('png','.jpg', '.jpeg', '.JPG', '.bmp', '.webp', '.tif', '.ti
 sequential_colormaps = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper','Purples', 'Blues', 'Greens', 'Oranges', 'Reds','twilight', 'hsv', 'rainbow', 'jet', 'turbo', 'gnuplot', 'brg']
 
 # this causes problems at smaller screen sizes with scaled text size
-# ctypes.windll.shcore.SetProcessDpiAwareness(1)
+ctypes.windll.shcore.SetProcessDpiAwareness(0)
 
 Standard_path = os.path.dirname(os.path.abspath(__file__))
 filelist = natsorted([fname for fname in os.listdir(Standard_path) if fname.endswith(file_type_names)])
@@ -271,6 +271,7 @@ class App(customtkinter.CTk):
         self.ticks_settings = "smart"
         self.multiplot_row = 9
         self.toolbar_height = 42
+        self.legend_font_size = 10
 
         # line plot settings
         self.linestyle='-'
@@ -333,9 +334,6 @@ class App(customtkinter.CTk):
         self.tabview.grid(row=3, column=1, padx=(10, 10), pady=(20, 0), columnspan=2, sticky="nsew", rowspan=10)
         self.tabview.add("Show Plots")
         self.tabview.add("Data Table")
-        # self.tabview.tab("Show Plots").configure(fg_color="white")
-        # self.tabview.rowconfigure(0, weight=1)  # Make the plot area expandable vertically
-        # self.tabview.columnconfigure(0, weight=1) 
         
         #buttons
         frame = self.sidebar_frame
@@ -367,6 +365,7 @@ class App(customtkinter.CTk):
         self.xval_max_entry   = App.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=90, placeholder_text="x max")
         self.function_entry   = App.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)")
         
+
         self.column_dict = {}
         self.column_values = ["None", "x-values", "y-values", "x-error", "y-error"]
         for i in range(0,10):
@@ -378,19 +377,19 @@ class App(customtkinter.CTk):
         self.load_settings_frame()
 
         #tooltips
-        self.tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file",
-                    "save_button": "Save the current image or current data\n- Image file types: .png, .jpg, .pdf\n- Data file types: .dat, .txt, .csv\n- Images can be saved in a plain format (without the axis) by checking 'Plot settings' -> 'Save plain images'\n- The image format can be chosen via 'Plot settings' -> 'Canvas Size'. Make sure to maximize the application window, otherwise the ratio can be altered by a large sidebar",
+        self.tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file\n- CTRL + O",
+                    "save_button": "Save the current image or current data\n- Image file types: .png, .jpg, .pdf\n- Data file types: .dat, .txt, .csv\n- Images can be saved in a plain format (without the axis) by checking 'Plot settings' -> 'Save plain images'\n- The image format can be chosen via 'Plot settings' -> 'Canvas Size'. Make sure to maximize the application window, otherwise the ratio can be altered by a large sidebar\n- CTRL + S",
                     "set_button":       "Open the Plot settings window\n- Top: Image Plot settings\n- Bottom Line Plot settings\n- Side: Boolean settings",
                     "plot_button":      "Reset and reinitialize the plot \n- delete all previous multiplots",
-                    "reset_button":     "Reset and reinitialize the plot \n- delete all previous multiplots",
+                    "reset_button":     "Reset and reinitialize the plot \n- delete all previous multiplots\n- Shortcut: R",
                     "addplot_button":   "Plot the currently selected file",
                     "prev_button":      "Plot the previous file in the list",
                     "next_button":      "Plot the next file in the list",
-                    "multiplot_button": "Create multiple plots in one figure \n- choose rows = 1, cols = 1 for single graph multiplots\n- Press CTRL+Z to delete the previous plot\n- You can click on the subplots to replot them or set the limits",
+                    "multiplot_button": "Create multiple plots in one figure \n- choose rows = 1, cols = 1 for single graph multiplots\n- Press CTRL+Z to delete the previous plot\n- You can click on the subplots to replot them or set the limits\n- Shortcurt: M",
                     "uselabels_button": "Create x,y-labels, add a legend\n- Legend settings: choose location, add file name to legend",
                     "uselims_button":   "Choose x,y-limits for line and image plots\n- x-limits stay the same when resetting the plot\n- y-limits will change to display all figures\n- the limits can be set with the sliders or typed in manually", 
                     "fit_button":       "Fit a function to the current data set\n- initial fit parameters can be set when the fit does not converge\n- use slider to fit only parts of the function\n- the textbox can be hidden via the 'Plot settings' -> 'Hide fit params'",
-                    "normalize_button": "Normalize the plot\n- data file: normalize to max = 1 or area = 1 (Plot settings -> normalize Area)\n- image file: enhance the contrast of the image (can be changed by adjusting: Plot settings -> Enhance value)", 
+                    "normalize_button": "Normalize the plot\n- data file: normalize to max = 1 or area = 1 (Plot settings -> normalize Area)\n- image file: enhance the contrast of the image (can be changed by adjusting: Plot settings -> Enhance value)\n- Shortcut: CTRL + N", 
                     "lineout_button": "Display a lineout function\n- only used for images, no multiplot possible", 
                     "FFT_button": "Display the |FT(f)|² of the data\n- limits of the Fourier window can be set\n- zero padding (factor determines number of zeros/x-array length)\n- can only be used for line plots, Images don't work.\n- if the spectrum is given in nm, the FT will be calculated in fs",
                     "data_table_button": "Check this to plot own custom data in the window below\n- columns must be separated by a space or tab (not comma or semicolon)\n- decimal separator: point and comma works\n- You can also plot data by using numpy functions, the argument must be called 'x'.",
@@ -417,7 +416,7 @@ class App(customtkinter.CTk):
         
         #entries
         self.folder_path = self.create_entry(column=2, row=0, text="Folder path", columnspan=2, width=600, padx=10, pady=10, sticky="w")
-        
+        self.folder_path.bind("<KeyRelease>", self.load_file_list)
         #dropdown menu
         self.optmenu = self.create_combobox(values=filelist, text="File name",row=1, column=2, columnspan=2, width=600, sticky="w")
         if not filelist == []: self.optmenu.set(filelist[0])
@@ -827,6 +826,8 @@ class App(customtkinter.CTk):
                 self.column_dict[entry].grid()
             else:
                 self.column_dict[entry].grid_remove()
+                if type(self.column_dict[entry]) is customtkinter.CTkOptionMenu:
+                    self.column_dict[entry].set(None)
 
 
         # create dictionary of the plot key word arguments
@@ -880,9 +881,9 @@ class App(customtkinter.CTk):
             if self.ax2 is not None:
                 lines, labels = self.ax1.get_legend_handles_labels()
                 lines2, labels2 = self.ax2.get_legend_handles_labels()
-                self.ax1.legend(lines+lines2, labels+labels2, **self.legend_type)
+                self.ax1.legend(lines+lines2, labels+labels2, fontsize=self.legend_font_size, **self.legend_type)
             else:
-                axis.legend(**self.legend_type)
+                axis.legend(fontsize=self.legend_font_size, **self.legend_type)
 
         # create the fit
         if self.use_fit == 1 and not(self.FFT_button.get() and ax=="ax1") and (not self.image_plot or self.fit_button.get()):
@@ -895,7 +896,6 @@ class App(customtkinter.CTk):
 
         return line
             
-
     def make_fit_plot(self, axis, data):
         self.create_fit_border_lines(axis)
         data = getattr(self,data)
@@ -981,7 +981,7 @@ class App(customtkinter.CTk):
         # use axis labels and add a legend
         if self.uselabels_button.get() and (self.ent_legend.get() != ""): 
             legend_label = self.ent_legend.get().format(name=self.optmenu.get()[self.legend_name])
-            self.ax1.legend(labels=[legend_label], handles=[self.ax1.plot([],[])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, **self.legend_type)
+            self.ax1.legend(labels=[legend_label], handles=[self.ax1.plot([],[])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, fontsize=self.legend_font_size,**self.legend_type)
 
         # use a scalebar on the bottom right corner
         if self.use_scalebar.get():
@@ -994,7 +994,6 @@ class App(customtkinter.CTk):
 
         self.plot_axis_parameters("ax1", plot_counter = self.plot_index)
         
-
     def update_plot(self, val):
         if self.uselims_button.get() == 1: 
             
@@ -1084,6 +1083,9 @@ class App(customtkinter.CTk):
         if path != "":
             self.folder_path.delete(0, customtkinter.END)
             self.folder_path.insert(0, path)
+        self.load_file_list()
+        
+    def load_file_list(self, val=None):
         global filelist
         filelist = natsorted([fname for fname in os.listdir(self.folder_path.get()) if fname.endswith(file_type_names)])
         self.optmenu.configure(values=filelist)
@@ -1253,8 +1255,13 @@ class App(customtkinter.CTk):
             self.settings_frame.grid()
             [getattr(self, name).grid() for name in widget_names]
 
+            if self.image_plot:
+                self.cols = 2
+                self.rows = 2
+
             if self.lineout_button.get():
                 self.cols = 2
+                self.rows = 1
 
             [getattr(self, name).delete(0, customtkinter.END) for name in ["ent_subplot", "ent_rows", "ent_cols"]]
             self.ent_subplot.insert(0,str(1))
@@ -1267,15 +1274,14 @@ class App(customtkinter.CTk):
             [getattr(self, name).grid_remove() for name in widget_names]
             self.close_settings_window()
 
-        # if initialize: self.initialize_plot()
-
     #############################################################
     ######################## Lineout ############################
     #############################################################
+            
     def load_lineout(self):
         row = 12
         self.lineout_title    = App.create_label( self.settings_frame, column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-        self.choose_ax_button = App.create_Menu(self.settings_frame, column=4, row=row+2, values=[" x ", " y "], command=self.initialize_lineout, columnspan=2, width=60, padx=(0,10), sticky="w")
+        self.choose_ax_button = App.create_Menu(self.settings_frame, column=4, row=row+2, values=[" x ", " y "], command=self.initialize_lineout, columnspan=2, width=60, padx=(0,10), sticky="w", init_val=" y ")
         self.save_lineout_button = App.create_button(self.settings_frame, column=4, row=row+1, image=self.img_save, command= lambda: self.save_data_file(self.lineout_data), width=60, padx=(0,10))
         self.angle_slider     = App.create_slider(self.settings_frame, from_=-90, to=90, command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=120, padx=(0,0), columnspan=2, number_of_steps=180)
         self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=1, command= lambda val=None: self.plot_lineout(val), row=row+2, column =2, width=120, padx=(0,0), columnspan=2)
@@ -1308,8 +1314,7 @@ class App(customtkinter.CTk):
             self.line_slider.configure(to=len(self.data[0,:]))
             self.line_slider.set(self.lineout_yvalue)
             self.angle_entry.bind("<KeyRelease>", lambda event, val=self.angle_entry, slider_widget=self.angle_slider: (slider_widget.set(float(val.get())), self.plot_lineout(val)))
-            self.choose_ax_button.set(" y ")
-            self.initialize_lineout(" y ")
+            self.initialize_lineout(self.choose_ax_button.get())
         else:
             [getattr(self, name).grid_remove() for name in widget_names]
             self.multiplot_button.configure(state="enabled")
@@ -1318,7 +1323,7 @@ class App(customtkinter.CTk):
 
     def initialize_lineout(self,val):
         self.initialize_plot()
-        if self.lineout_button.get() == False: return
+        if not self.lineout_button.get(): return
 
         if self.uselims_button.get():
             self.x_lineout_min = int(self.ylim_slider.get()[0])
@@ -1380,14 +1385,10 @@ class App(customtkinter.CTk):
 
         # Extract the values along the line, using cubic interpolation
         brightness_value = scipy.ndimage.map_coordinates(self.data, np.vstack((y,x)))
-
-        scale = 1
-        if self.convert_pixels.get():
-            scale = self.pixel_size
+        scale = self.pixel_size if self.convert_pixels.get() else 1
 
         self.lineout_data = np.vstack([np.arange(0,num*scale,scale), brightness_value]).T
         return (x1, y1), (x2, y2)
-
 
     def plot_lineout(self, val):
         self.line_entry.delete(0, 'end')
@@ -1641,7 +1642,6 @@ class App(customtkinter.CTk):
 
         self.quit()    # Python 3.12 works
         self.destroy() # needed for built exe
-
 
     def on_click(self, event):
         for i, (ax1,ax2) in enumerate(self.ax_container):
@@ -1921,16 +1921,22 @@ class LegendWindow(customtkinter.CTkToplevel):
                             'Remove file type': slice(0,-4),
                             }
 
+        self.grid_columnconfigure(0, minsize=120)
         App.create_label(self, column=1, row=0, columnspan=2, text="Legend Settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
 
         # values for line plots
-        self.reset_button       = App.create_button(self, column=1, row=5, text="Reset Settings",   command=self.reset_values, width=150)
+        self.reset_button       = App.create_button(self, column=3, row=1, text="Reset Settings",   command=self.reset_values, width=130)
         self.legend_type_list   = App.create_Menu(self, column=1, row=1, columnspan=2, values=list(self.legend_type.keys()), text="Legend location", command=self.apply_settings)
         self.legend_name_list   = App.create_Menu(self, column=1, row=2, columnspan=2, values=list(self.legend_name.keys()), text="Legend: {name}", command=self.apply_settings)
-        self.name_slice_slider  = App.create_range_slider(self, from_=0, to=len(self.app.optmenu.get()), text="slice file name", command= lambda value, var="slice_var": self.update_slider_value(value, var), row=3, column =1, width=200, columnspan=2, init_value=[0, len(self.app.optmenu.get())])
-
         self.slice_var = customtkinter.StringVar()  # StringVar to hold the label value
-        App.create_label(self, textvariable=self.slice_var, column=1, row=4, width=50, sticky=None)
+        self.fontsize_var = customtkinter.StringVar()  # StringVar to hold the label value
+        App.create_label(self, textvariable=self.slice_var, column=1, row=5, width=50, columnspan=3, sticky="w", padx=10)
+        App.create_label(self, textvariable=self.fontsize_var, column=2, row=3, width=30, sticky="e")
+
+        self.name_slice_slider  = App.create_range_slider(self, from_=0, to=len(self.app.optmenu.get()), text="slice file name", command= lambda value, var="slice_var": self.update_slider_value(value, var), row=4, column =1, width=200, columnspan=2, init_value=[0, len(self.app.optmenu.get())])
+        self.fontsize_slider   = App.create_slider(    self, column=1, row=3, columnspan=2, from_=5, to=20, 
+                                                    command= lambda value, var="fontsize_var": self.update_fontsize_value(value, var), text="font size", width=160, number_of_steps=15, init_val=self.app.legend_font_size)
+
         #set initial values
         self.init_values()
         
@@ -1942,11 +1948,16 @@ class LegendWindow(customtkinter.CTkToplevel):
         except ValueError:
             self.legend_name_list.set(list(self.legend_name.keys())[list(self.legend_name.values()).index(slice(None,None))])
         self.slice_var.set(self.app.optmenu.get())
+        self.fontsize_var.set(str(round(self.app.legend_font_size)))
 
     # reset to defaul values
     def reset_values(self):
         self.legend_type_list.set(next(iter(self.legend_type)))
         self.legend_name_list.set(next(iter(self.legend_name)))
+        self.fontsize_slider.set(10)
+        self.fontsize_var.set(str(10))
+        
+        self.apply_settings(None)
         # Here we define the standard values!!!
         
         
@@ -1957,11 +1968,17 @@ class LegendWindow(customtkinter.CTkToplevel):
         variable.set(self.app.optmenu.get()[slice_object])
         self.legend_name['Custom name'] = slice_object
         self.apply_settings(None)
+
+    def update_fontsize_value(self, value, var_name):
+        variable = getattr(self, var_name)
+        variable.set(str(round(value,2)))
+        self.apply_settings(None)
         
     def apply_settings(self, val):
         # self.app.aspect=self.aspect.get()
         self.app.legend_type = self.legend_type[self.legend_type_list.get()]
         self.app.legend_name = self.legend_name[self.legend_name_list.get()]
+        self.app.legend_font_size = float(self.fontsize_slider.get())
 
     def toggle_boolean(self, boolean):
         boolean.set(not boolean.get())
@@ -2231,5 +2248,10 @@ if __name__ == "__main__":
     app.protocol("WM_DELETE_WINDOW", app.on_closing)
 
     app.bind("<Control-z>", lambda x: app.control_z())
+    app.bind("<Control-o>", lambda x: app.read_file_list())
+    app.bind("<Control-s>", lambda x: app.save_figure())
+    app.bind("<Control-n>", lambda x: app.normalize_button.toggle())
+    app.bind("<r>", lambda x: app.initialize())
+    app.bind("<m>", lambda x: app.plot())
     app.bind("<F1>", toggle_bool)
     app.mainloop()
