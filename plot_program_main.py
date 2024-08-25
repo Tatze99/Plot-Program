@@ -299,6 +299,7 @@ class App(customtkinter.CTk):
         self.label_dist = 1
         self.aspect = "equal"
         self.plot_type = "errorbar"
+        self.clim = (0,1)
 
         # fit settings
         self.use_fit = 0
@@ -315,7 +316,7 @@ class App(customtkinter.CTk):
         self.use_colorbar = customtkinter.BooleanVar(value=False)
         self.convert_pixels = customtkinter.BooleanVar(value=False)
         self.convert_rgb_to_gray = customtkinter.BooleanVar(value=False)
-        self.update_labels_multiplot = customtkinter.BooleanVar(value=False)
+        self.update_labels_multiplot = customtkinter.BooleanVar(value=True)
         self.rows = 1
         self.cols = 1
         self.mouse_clicked_on_canvas = False
@@ -377,19 +378,19 @@ class App(customtkinter.CTk):
         self.load_settings_frame()
 
         #tooltips
-        self.tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file\n- CTRL + O",
-                    "save_button": "Save the current image or current data\n- Image file types: .png, .jpg, .pdf\n- Data file types: .dat, .txt, .csv\n- Images can be saved in a plain format (without the axis) by checking 'Plot settings' -> 'Save plain images'\n- The image format can be chosen via 'Plot settings' -> 'Canvas Size'. Make sure to maximize the application window, otherwise the ratio can be altered by a large sidebar\n- CTRL + S",
+        self.tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file\n- keybind: CTRL + O",
+                    "save_button": "Save the current image or current data\n- Image file types: .png, .jpg, .pdf\n- Data file types: .dat, .txt, .csv\n- Save images in plain format (without the axis): 'Plot settings' -> 'Save plain images'\n- image format: 'Plot settings' -> 'Canvas Size'. (maximize app window)\n- keybind: CTRL + S",
                     "set_button":       "Open the Plot settings window\n- Top: Image Plot settings\n- Bottom Line Plot settings\n- Side: Boolean settings",
-                    "plot_button":      "Reset and reinitialize the plot \n- delete all previous multiplots\n- CTRL + R",
-                    "reset_button":     "Reset and reinitialize the plot \n- delete all previous multiplots\n- CTRL + R",
+                    "plot_button":      "Reset and reinitialize the plot \n- keybind: CTRL + R",
+                    "reset_button":     "Reset and reinitialize the plot \n- delete all previous multiplots\n- keybind: CTRL + R",
                     "addplot_button":   "Plot the currently selected file",
-                    "prev_button":      "Plot the previous file in the list",
-                    "next_button":      "Plot the next file in the list",
-                    "multiplot_button": "Create multiple plots in one figure \n- choose rows = 1, cols = 1 for single graph multiplots\n- Press CTRL+Z to delete the previous plot\n- You can click on the subplots to replot them or set the limits\n- CTRL + M",
+                    "prev_button":      "Plot the previous file in the list\n- keybind: Left Arrow key",
+                    "next_button":      "Plot the next file in the list\n- keybind: Right Arrow key",
+                    "multiplot_button": "Create multiple plots in one figure \n- choose rows = 1, cols = 1 for single graph multiplots\n- Press CTRL+Z to delete the previous plot\n- You can click on the subplots to replot them or set the limits\n- keybind: CTRL + M",
                     "uselabels_button": "Create x,y-labels, add a legend\n- Legend settings: choose location, add file name to legend",
                     "uselims_button":   "Choose x,y-limits for line and image plots\n- x-limits stay the same when resetting the plot\n- y-limits will change to display all figures\n- the limits can be set with the sliders or typed in manually", 
                     "fit_button":       "Fit a function to the current data set\n- initial fit parameters can be set when the fit does not converge\n- use slider to fit only parts of the function\n- the textbox can be hidden via the 'Plot settings' -> 'Hide fit params'",
-                    "normalize_button": "Normalize the plot\n- data file: normalize to max = 1 or area = 1 (Plot settings -> normalize Area)\n- image file: enhance the contrast of the image (can be changed by adjusting: Plot settings -> Enhance value)\n- Shortcut: CTRL + N", 
+                    "normalize_button": "Normalize the plot\n- data file: normalize to max = 1 or area = 1 (Plot settings -> normalize Area)\n- image file: enhance the contrast of the image (can be changed manually: Plot settings -> pixel range)\n- keybind: CTRL + N", 
                     "lineout_button": "Display a lineout function\n- only used for images, no multiplot possible", 
                     "FFT_button": "Display the |FT(f)|² of the data\n- limits of the Fourier window can be set\n- zero padding (factor determines number of zeros/x-array length)\n- can only be used for line plots, Images don't work.\n- if the spectrum is given in nm, the FT will be calculated in fs",
                     "data_table_button": "Check this to plot own custom data in the window below\n- columns must be separated by a space or tab (not comma or semicolon)\n- decimal separator: point and comma works\n- You can also plot data by using numpy functions, the argument must be called 'x'.",
@@ -618,16 +619,12 @@ class App(customtkinter.CTk):
 
         # multiplots but in several subplots
         if self.replot and (self.rows != 1 or self.cols != 1):
+            self.ent_subplot.configure(state='normal')
             if self.sub_plot_counter >= self.sub_plot_value or self.plot_counter == 1:
                 if self.plot_counter > self.rows*self.cols: return
                 ax1 = self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter)
                 self.plot_container = []
                 if self.mouse_clicked_on_canvas:
-                    if not self.update_labels_multiplot.get():
-                        self.ent_xlabel.reinsert(0, self.ax1.xaxis.get_label().get_text())  # reinsert the old x- and y-labels
-                        self.ent_ylabel.reinsert(0, self.ax1.yaxis.get_label().get_text())
-                        _, label = self.ax1.get_legend_handles_labels()
-                        self.ent_legend.reinsert(0, label[0])
                     self.ax1.remove()
                     self.ax_container[self.plot_counter-1] = (ax1, None)
                     self.mouse_clicked_on_canvas = False
@@ -645,9 +642,12 @@ class App(customtkinter.CTk):
                 self.sub_plot_counter += 1
         # single plot or multiplot but same axis, no image plot!
         elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter == 1) or not self.replot:
-            self.ax1 = self.fig.add_subplot(1,1,1)
+            ax1 = self.fig.add_subplot(1,1,1)
+            self.ax_container.append((ax1, None)) # Add primary axis with no twin yet
+            self.ax1 = ax1
             self.ax1.set_prop_cycle(cycler(color=self.get_colormap(self.cmap)))
             self.plot_container = []
+            self.ent_subplot.configure(state='disabled')
 
         # create the plot depending if we have a line or image plot
         if self.image_plot: self.make_image_plot(file_path)
@@ -785,13 +785,22 @@ class App(customtkinter.CTk):
 
         return x_data, y_data_list, x_error, y_error 
 
+    def make_line_legend(self, axis):
+        if self.ax2 is not None:
+                lines, labels = self.ax1.get_legend_handles_labels()
+                lines2, labels2 = self.ax2.get_legend_handles_labels()
+                self.legend = self.ax1.legend(lines+lines2, labels+labels2, fontsize=self.legend_font_size,fancybox=True, **self.legend_type)
+        else:
+            self.legend = axis.legend(fontsize=self.legend_font_size, fancybox=True,**self.legend_type)
+        
+        self.map_legend_to_ax = {}  # Will map legend lines to original lines.
+        for legend_line, ax_line in zip(self.legend.get_lines(), [x[0][0] for x in self.plot_container]):
+            legend_line.set_picker(5)  # Enable picking on the legend line.
+            self.map_legend_to_ax[legend_line] = ax_line
+
     def make_line_plot(self, dat, ax):
 
         if self.multiplot_button.get():
-                if self.sub_plot_value == 1:
-                    self.two_axis_button.configure(state="disabled")
-                else: 
-                    self.two_axis_button.configure(state="enabled")
                 if self.two_axis_button.get():
                     if self.first_ax2:
                         ax2 = self.ax1.twinx()
@@ -880,17 +889,7 @@ class App(customtkinter.CTk):
         axis.set_xscale('log' if self.plot_type in ["semilogx", "loglog"] else 'linear')
 
         if self.uselabels_button.get() and (self.ent_legend.get() != "") and ax != "ax_second": 
-            if self.ax2 is not None:
-                lines, labels = self.ax1.get_legend_handles_labels()
-                lines2, labels2 = self.ax2.get_legend_handles_labels()
-                self.legend = self.ax1.legend(lines+lines2, labels+labels2, fontsize=self.legend_font_size,fancybox=True, **self.legend_type)
-            else:
-                self.legend = axis.legend(fontsize=self.legend_font_size, fancybox=True,**self.legend_type)
-            
-            self.map_legend_to_ax = {}  # Will map legend lines to original lines.
-            for legend_line, ax_line in zip(self.legend.get_lines(), [x[0][0] for x in self.plot_container]):
-                legend_line.set_picker(5)  # Enable picking on the legend line.
-                self.map_legend_to_ax[legend_line] = ax_line
+            self.make_line_legend(axis)
 
         # create the fit
         if self.use_fit == 1 and not(self.FFT_button.get() and ax=="ax1") and (not self.image_plot or self.fit_button.get()):
@@ -983,9 +982,10 @@ class App(customtkinter.CTk):
             self.ax1.set(yticks=np.arange(0,len(self.data[:,0]), self.label_dist/self.pixel_size), yticklabels=['{:.1f}'.format(a) for a in np.arange(0,len(self.data[:,0])*self.pixel_size, self.label_dist)])
 
         # normalize the image brightness
-        if self.normalize_button.get(): self.normalize()
+        if self.normalize_button.get(): 
+            self.normalize()
         ######### create the plot
-        plot = self.ax1.imshow(self.data, origin='lower', **self.plot_kwargs)
+        self.image = self.ax1.imshow(self.data, origin='lower', clim=self.clim, **self.plot_kwargs)
         #########
 
         # use axis labels and add a legend
@@ -1000,7 +1000,7 @@ class App(customtkinter.CTk):
         
         # use a colorbar
         if self.use_colorbar.get():
-            self.cbar = self.fig.colorbar(plot, fraction=0.045, pad=0.01)
+            self.cbar = self.fig.colorbar(self.image, fraction=0.045, pad=0.01)
 
         self.plot_axis_parameters("ax1", plot_counter = self.plot_index)
         
@@ -1031,6 +1031,7 @@ class App(customtkinter.CTk):
             if self.image_plot: # display images
                 ax.set_xlim(left=float(self.x_l), right=float(self.x_r))
                 ax.set_ylim(bottom=float(self.y_l), top=float(self.y_r))
+                self.image.set_clim(self.clim)
 
             else: # line plot
                 pad_val = 0.05 if not self.mid_axis_button.get() else 0
@@ -1127,6 +1128,8 @@ class App(customtkinter.CTk):
             colors = plt.get_cmap(self.cmap).colors
             n = (self.plot_counter-1) % len(colors)
             self.ax1.set_prop_cycle(cycler(color=colors[n:]+ colors[:n]))
+            if self.uselabels_button.get() and (self.ent_legend.get() != ""): 
+                self.make_line_legend(self.ax1)
 
         self.canvas.draw()
 
@@ -1255,12 +1258,14 @@ class App(customtkinter.CTk):
         self.ent_cols, self.ent_cols_text = App.create_entry( self.settings_frame,column=3, row=row+1, width=50, text="columns", textwidget=True, columnspan=3, padx=(10,70))
         self.ent_subplot, self.ent_subplot_text = App.create_entry( self.settings_frame,column=1, row=row+2, width=50, text="subplots", textwidget=True)
         self.two_axis_button = App.create_switch(self.settings_frame, command=None, text="2nd axis", column=2, row=self.multiplot_row+2, columnspan=3, padx=20, pady=(10,5))
-        self.multiplot(initialize = False)
+        self.multiplot()
         
-    def multiplot(self, initialize = True):
+    def multiplot(self):
         self.rows = 1
         self.cols = 1
         widget_names = ["ent_rows","ent_rows_text","ent_cols","ent_cols_text","reset_button","addplot_button","multiplot_title","ent_subplot","ent_subplot_text", "two_axis_button"]
+        self.ent_subplot.reinsert(0,str(1))
+
         if self.multiplot_button.get() == 1:
             self.replot = True
             self.plot_button.grid_remove()
@@ -1275,7 +1280,6 @@ class App(customtkinter.CTk):
                 self.cols = 2
                 self.rows = 1
 
-            self.ent_subplot.reinsert(0,str(1))
             self.ent_rows.reinsert(0,str(self.rows))
             self.ent_cols.reinsert(0,str(self.cols))
             
@@ -1543,8 +1547,15 @@ class App(customtkinter.CTk):
 
     def normalize(self):
         if self.image_plot:
-            self.data = self.data * 0.5/np.mean(self.data)*self.enhance_value
-            self.data[self.data>1] = 1
+            # self.data = self.data * 0.5/np.mean(self.data)*self.enhance_value
+            # self.data[self.data>1] = 1
+            pixel_values = self.data.flatten()
+            
+            # Calculate the lower and upper percentile for 95% of the pixel values
+            lower_bound = np.percentile(pixel_values, 2.5)
+            upper_bound = np.percentile(pixel_values, 97.5)
+
+            self.clim = (lower_bound, upper_bound)
         elif self.change_norm_to_area.get() == False:
             self.data[:, 1:] /= np.max(self.data[:, 1])
         elif self.change_norm_to_area.get() == True:
@@ -1665,6 +1676,11 @@ class App(customtkinter.CTk):
                 self.ax2 = ax2
                 self.plot_counter = i+1
                 self.mouse_clicked_on_canvas = True
+                if self.update_labels_multiplot.get():
+                        self.ent_xlabel.reinsert(0, self.ax1.xaxis.get_label().get_text())  # reinsert the old x- and y-labels
+                        self.ent_ylabel.reinsert(0, self.ax1.yaxis.get_label().get_text())
+                        _, label = self.ax1.get_legend_handles_labels()
+                        self.ent_legend.reinsert(0, label[0])
                 self.plot_axis_parameters
             else:
                 ax1.set_facecolor('white')
@@ -1744,8 +1760,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.label_dist         = App.create_entry(self,column=1, row=6, columnspan=2, text="Label step [mm]", placeholder_text="1 mm", sticky='w', init_val=self.app.label_dist)
         self.aspect             = App.create_Menu(self, column=1, row=7, columnspan=2, values=self.aspect_values, text="Aspect",  command=self.apply_settings, init_val=self.app.aspect)
         self.cmap_imshow_list   = App.create_Menu(self, column=1, row=8, columnspan=2, values=self.cmap_imshow, text="Colormap",command=self.apply_settings, init_val=self.app.cmap_imshow)
-        self.enhance_slider     = App.create_slider(  self,   column=1, row=9, columnspan=2, from_=0.1, to=2, 
-                                                    command= lambda value, var="enhance_var": self.update_slider_value(value, var), text="Enhance value", number_of_steps=19, init_val=self.app.enhance_value)
+        self.clim_slider     = App.create_range_slider(  self,   column=1, row=9, columnspan=2, from_=0, to=1, width=155,
+                                                    command= lambda value, var="pixel_range_var": self.update_rangeslider_value(value, var), text="Pixel range", init_value=list(self.app.clim))
 
         # values for line plots
         self.plot_type_list     = App.create_Menu(self, column=1, row=11, columnspan=2, values=list(self.plot_type.keys()),text="Plot type",command=self.apply_settings)
@@ -1757,7 +1773,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.grid_axis_list     = App.create_Menu(self, column=2, row=14, width=70, values=self.grid_axis, command=self.apply_settings, init_val=self.app.grid_axis)
         self.moving_av_list     = App.create_Menu(self, column=1, row=15, columnspan=2, values=self.moving_average, text="Average", command=self.apply_settings, init_val=self.app.moving_average)
         self.cmap_length_list   = App.create_Menu(self, column=2, row=13, width=70, values=self.cmap_length, command=self.apply_settings, init_val=self.app.cmap_length)
-        self.linewidth_slider   = App.create_slider(    self, column=1, row=16, columnspan=2, from_=0.1, to=2, 
+        self.linewidth_slider   = App.create_slider(    self, column=1, row=16, columnspan=2, from_=0.1, to=2, width=155,
                                                     command= lambda value, var="lw_var": self.update_slider_value(value, var), text="line width", number_of_steps=19, init_val=self.app.linewidth)
 
         self.reset_button           = App.create_button(self, column=4, row=0, text="Reset Settings",   command=self.reset_values, width=130, pady=(20,5))
@@ -1782,7 +1798,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
                     "label_dist":       "Set, at which points a new label is placed", 
                     "aspect":           "Set the aspect of the image\n- 'equal' - original image aspect, no pixel distortion\n- 'auto' - fill the image to the size of the window, produces image distortion.",
                     "cmap_imshow_list": "Choose between different colormaps", 
-                    "enhance_slider":   "Activation by checking 'Normalize'\n- Enhance the contrast of the images by dividing all pixel by the mean pixel value and multiplying them with the 'Enhance value'. Values > 255 will be set to 255 (white)",
+                    "clim_slider":   "Enhance the contrast of the images by selecting the pixel range\n- Uncheck 'Normalize' for manual setting",
                     "plot_type_list":   "Choose between different plotting scales\n- Normal: plt.plot(...)\n- Semi Logarithmic x: plt.semilogx(...)\n- Semi Logarithmic y: plt.semilogy(...)\n- Log-Log plot: plt.loglog(...)",
                     "linestyle_list":   "Choose different line styles for the plot.",
                     "marker_list":      "Determine, if every data point is highlighted with a marker. Different marker shapes can be chosen.", 
@@ -1804,10 +1820,11 @@ class SettingsWindow(customtkinter.CTkToplevel):
             setattr(self, name+"_ttp", CreateToolTip(getattr(self, name), description))
 
         # Slider labels    
-        self.enhance_var = customtkinter.StringVar()  # StringVar to hold the label value
+        self.pixel_range_var = customtkinter.StringVar()  # StringVar to hold the label value
         self.lw_var = customtkinter.StringVar()  # StringVar to hold the label value
-        App.create_label(self, textvariable=self.enhance_var, column=3, row=9, width=30, anchor='w', sticky='w')
-        App.create_label(self, textvariable=self.lw_var, column=3, row=16, width=30, anchor='w', sticky='w')
+        App.create_label(self, textvariable=self.pixel_range_var, column=2, row=9, width=30, anchor='e', sticky='e')
+        App.create_label(self, textvariable=self.lw_var, column=2, row=16, width=30, anchor='e', sticky='e')
+        self.grid_columnconfigure(3, minsize=30)
         
         self.canvas_width.bind("<KeyRelease>", self.apply_settings)
         self.canvas_height.bind("<KeyRelease>", self.apply_settings)
@@ -1825,7 +1842,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.marker_list.set(list(self.markers.keys())[list(self.markers.values()).index(self.app.markers)])
         self.plot_type_list.set(list(self.plot_type.keys())[list(self.plot_type.values()).index(self.app.plot_type)])
         self.single_colors_list.set(list(self.single_colors.keys())[list(self.single_colors.values()).index(self.app.single_color)])
-        self.update_slider_value(self.app.enhance_value, "enhance_var")
+        self.update_rangeslider_value(list(self.app.clim), "pixel_range_var")
         self.update_slider_value(self.app.linewidth, "lw_var")
 
         if self.app.use_scalebar.get(): self.scale_switch_button.select()
@@ -1865,14 +1882,21 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.cmap_length_list.set(str(self.cmap_length[1]))
         self.plot_type_list.set(next(iter(self.plot_type)))
 
-        self.enhance_slider.set(1)
+        self.clim_slider.set([0,1])
         self.linewidth_slider.set(1) # before next line!
-        self.update_slider_value(1, "enhance_var")
+        self.update_rangeslider_value((0,1), "pixel_range_var")
         self.update_slider_value(1, "lw_var")
           
     def update_slider_value(self, value, var_name):
         variable = getattr(self, var_name)
         variable.set(str(round(value,2)))
+        self.apply_settings(None)
+
+    def update_rangeslider_value(self, value, var_name):
+        variable = getattr(self, var_name)
+        # (x1, x2) = value
+        value = tuple(round(x, 1) for x in value)
+        variable.set(f"{value[0],value[1]}")
         self.apply_settings(None)
         
     def apply_settings(self, val):
@@ -1884,7 +1908,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         except: pass 
         self.app.aspect=self.aspect.get()
         self.app.cmap_imshow=self.cmap_imshow_list.get()
-        self.app.enhance_value=self.enhance_slider.get()
+        self.app.clim=tuple(self.clim_slider.get())
 
         self.app.canvas_ratio=self.canvas_ratio[self.canvas_ratio_list.get()]
         self.app.label_settings = self.label_settings_list.get()
@@ -1916,6 +1940,10 @@ class SettingsWindow(customtkinter.CTkToplevel):
         else: 
             self.single_colors_list.grid_remove()
             self.cmap_length_list.grid()
+
+        if val == None and hasattr(self.app, 'image'): 
+            self.app.image.set_clim(self.app.clim)
+            self.app.canvas.draw()
 
     def toggle_boolean(self, boolean):
         boolean.set(not boolean.get())
@@ -2198,7 +2226,7 @@ class CreateToolTip(object):
     """
     def __init__(self, widget, text='widget info'):
         self.waittime = 1000     #miliseconds
-        self.wraplength = 300   #pixels
+        self.wraplength = 500   #pixels
         self.widget = widget
         self.text = text
         self.widget.bind("<Enter>", self.enter)
@@ -2287,5 +2315,7 @@ if __name__ == "__main__":
     app.bind("<Control-n>", lambda x: app.normalize_button.toggle())
     app.bind("<Control-r>", lambda x: app.initialize())
     app.bind("<Control-m>", lambda x: app.plot())
+    app.bind("<Left>", lambda x: app.change_plot(app.replot,-1))
+    app.bind("<Right>", lambda x: app.change_plot(app.replot,1))
     app.bind("<F1>", toggle_bool)
     app.mainloop()
