@@ -557,6 +557,7 @@ class App(customtkinter.CTk):
             plt.close(self.fig)
             
         self.ax_container = []
+        self.legend = None
             
         if self.replot and not self.lineout_button.get() and not self.FFT_button.get():
             self.rows=float(self.ent_rows.get())
@@ -574,7 +575,8 @@ class App(customtkinter.CTk):
             height = self.canvas_height/2.54 if self.canvas_ratio == 0 else self.canvas_width/(self.canvas_ratio*2.54)
             sticky = None
 
-        self.fig = plt.figure(figsize=(width, height),constrained_layout=True, dpi=dpi)  
+        self.fig = plt.figure(figsize=(width, height),constrained_layout=True, dpi=dpi) 
+        self.fig.suptitle("") # dummy suptitle to allocate the extra space an invisible title would take
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.tabview.tab("Show Plots"))
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky=sticky)
         
@@ -599,6 +601,7 @@ class App(customtkinter.CTk):
             self.update_plot("Update Limits")
 
     def plot(self):
+        self.clicked_axis_index = None
         if self.replot and not self.lineout_button.get() and not self.FFT_button.get():
             self.sub_plot_value = float(self.ent_subplot.get())
 
@@ -622,6 +625,8 @@ class App(customtkinter.CTk):
                 if self.plot_counter > self.rows*self.cols: return
                 ax1 = self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter)
                 self.plot_container = []
+                self.plot_order = []
+                self.legend = None
                 if self.mouse_clicked_on_canvas:
                     self.ax1.remove()
                     self.ax_container[self.plot_counter-1] = (ax1, None)
@@ -645,6 +650,7 @@ class App(customtkinter.CTk):
             self.ax1 = ax1
             self.ax1.set_prop_cycle(cycler(color=self.get_colormap(self.cmap)))
             self.plot_container = []
+            self.plot_order = []
             self.ent_subplot.configure(state='disabled')
 
         # create the plot depending if we have a line or image plot
@@ -654,7 +660,11 @@ class App(customtkinter.CTk):
             self.data = self.load_plot_data(file_path)
             line_container = self.make_line_plot("data", "ax1")
             
+        if self.uselabels_button.get() and (self.ent_title.get() != ""):
+            self.fig.suptitle(self.ent_title.get()) 
+        
         self.update_plot(None)
+
 
         if self.uselims_button.get() and not self.image_plot:
             self.ylim_slider.set([self.ymin, self.ymax])
@@ -770,15 +780,29 @@ class App(customtkinter.CTk):
 
     # Make the legend for line plots
     def make_line_legend(self, axis):
-        if self.ax2 is not None:
-                lines, labels = self.ax1.get_legend_handles_labels()
-                lines2, labels2 = self.ax2.get_legend_handles_labels()
-                self.legend = self.ax1.legend(lines+lines2, labels+labels2, fontsize=self.legend_font_size,fancybox=True, **self.legend_type)
+        if self.legend is not None:
+            self.legend.remove()
+
+        if self.ax2 is not None:    
+                handles1, labels1 = self.ax1.get_legend_handles_labels()
+                handles2, labels2 = self.ax2.get_legend_handles_labels()
+
+                handles, labels = [], []
+                legend_map = {"ax1": (handles1, labels1), "ax2": (handles2, labels2)}
+
+                # sort the handles based on the order in the self.plot_container which is tracked by self.plot_order
+                for name in self.plot_order:
+                    handle, label = legend_map[name]
+                    handles.append(handle.pop(0))
+                    labels.append(label.pop(0))
+
+                self.legend = self.ax2.legend(handles, labels, fontsize=self.legend_font_size, fancybox=True, **self.legend_type)
         else:
-            self.legend = axis.legend(fontsize=self.legend_font_size, fancybox=True,**self.legend_type)
+            handles, labels = axis.get_legend_handles_labels()
+            self.legend = axis.legend(handles, labels, fontsize=self.legend_font_size, fancybox=True, **self.legend_type)
         
         self.map_legend_to_ax = {}  # Will map legend lines to original lines.
-        for legend_line, ax_line in zip(self.legend.get_lines(), [x[0][0] for x in self.plot_container]):
+        for legend_line, ax_line in zip(self.legend.legend_handles, [x for x in self.plot_container]):
             legend_line.set_picker(5)  # Enable picking on the legend line.
             self.map_legend_to_ax[legend_line] = ax_line
 
@@ -858,6 +882,7 @@ class App(customtkinter.CTk):
             else: 
                 fill = ()
             self.plot_container.append((container,fill, FWHM_line))
+            self.plot_order.append(ax)
             self.plot_counter += 1
 
         axis.set_yscale('log' if self.plot_type in ["semilogy", "loglog"] else 'linear')
@@ -1120,6 +1145,7 @@ class App(customtkinter.CTk):
                 except: pass
 
             self.plot_container.pop()
+            self.plot_order.pop()
 
             # ensure that the color is setback to its previous state by shifting the colormap by the value n determined by the current plot counter and resetting the prop_cycle
             self.plot_counter -= 1
@@ -1232,11 +1258,13 @@ class App(customtkinter.CTk):
         self.ent_ylabel   = App.create_entry(self.settings_frame,column=3, row=row+1, columnspan=2, width=110, placeholder_text="y label")
         self.ent_xlabel, self.ent_label_text   = App.create_entry(self.settings_frame,column=1, row=row+1, columnspan=2, width=110, placeholder_text="x label", text="x / y", textwidget=True)
         self.ent_legend, self.ent_legend_text  = App.create_entry(self.settings_frame,column=1, row=row+2, columnspan=4, width=110, placeholder_text="{name}",text="Legend", textwidget=True)
+        self.ent_title, self.ent_title_text  = App.create_entry(self.settings_frame,column=1, row=row+3, columnspan=4, width=110, placeholder_text="title",text="Title", textwidget=True)
         self.legend_settings_button = App.create_button(self.settings_frame, text="Settings", command=lambda: self.open_toplevel(LegendWindow, "Legend Settings"), column=3, row=row+2, columnspan=2, image=self.img_settings, width=110, sticky='w')
+        self.update_labels_button = App.create_button(self.settings_frame, text="Update", command=self.update_labels, column=3, row=row+3, columnspan=2, image=self.img_reset, width=110, sticky='w')
         self.use_labels()
         
     def use_labels(self):
-        widget_names = ["ent_xlabel","ent_label_text","ent_ylabel","ent_legend","ent_legend_text","labels_title","legend_settings_button"]
+        widget_names = ["ent_xlabel","ent_label_text","ent_ylabel","ent_legend","ent_legend_text","labels_title","legend_settings_button", "ent_title", "ent_title_text", "update_labels_button"]
 
         if self.uselabels_button.get():
             self.settings_frame.grid() 
@@ -1245,6 +1273,23 @@ class App(customtkinter.CTk):
             [getattr(self, name).grid_remove() for name in widget_names]
             self.close_settings_window()    
     
+    def update_labels(self):
+        ax = self.ax2 if self.two_axis_button.get() else self.ax1    
+        ax.set_xlabel(self.ent_xlabel.get())
+        ax.set_ylabel(self.ent_ylabel.get())
+        self.fig.suptitle(self.ent_title.get())
+
+        if self.image_plot and self.ent_legend.get() != "":
+            self.ax1.legend(labels=[self.ent_legend.get()], handles=[self.ax1.plot([],[])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, fontsize=self.legend_font_size,fancybox=True,**self.legend_type)
+        elif self.clicked_axis_index is not None:
+            if not self.plot_container[self.clicked_axis_index][0][0].get_visible():
+                self.plot_container[self.clicked_axis_index][0].set_label(self.ent_legend.get())
+
+            for ax_line in self.plot_container:
+                ax_line = self.change_plot_visibility(ax_line, visibility=True)
+
+                self.make_line_legend(ax)
+        self.canvas.draw()
     #############################################################
     ##################### multiplot #############################
     #############################################################
@@ -1682,10 +1727,13 @@ class App(customtkinter.CTk):
                 self.plot_counter = i+1
                 self.mouse_clicked_on_canvas = True
                 if self.uselabels_button.get() and self.update_labels_multiplot.get():
-                        self.ent_xlabel.reinsert(0, self.ax1.xaxis.get_label().get_text())  # reinsert the old x- and y-labels
-                        self.ent_ylabel.reinsert(0, self.ax1.yaxis.get_label().get_text())
-                        _, label = self.ax1.get_legend_handles_labels()
-                        self.ent_legend.reinsert(0, label[0])
+                    self.ent_xlabel.reinsert(0, self.ax1.xaxis.get_label().get_text())  # reinsert the old x- and y-labels
+                    self.ent_ylabel.reinsert(0, self.ax1.yaxis.get_label().get_text())
+                    # try:
+                    #     _, label = self.ax1.get_legend_handles_labels()
+                    #     self.ent_legend.reinsert(0, label[0])
+                    # except:
+                    #     pass
                 self.plot_axis_parameters
             else:
                 ax1.set_facecolor('white')
@@ -1708,13 +1756,24 @@ class App(customtkinter.CTk):
             return
 
         ax_line = self.map_legend_to_ax[legend_line]
-        visible = not ax_line.get_visible()
-        ax_line.set_visible(visible)
+        visible = not ax_line[0][0].get_visible()
+        ax_line = self.change_plot_visibility(ax_line, visible)
+
+        # get the index of the clicked axis, this is important to reset the label of this axis
+        self.clicked_axis_index = next((i for i, plot in enumerate(self.plot_container) if plot is ax_line), None)
 
         # Change the alpha on the line in the legend, so we can see what lines have been toggled.
         legend_line.set_alpha(1.0 if visible else 0.2)
         self.canvas.draw() 
+    
+    def change_plot_visibility(self, ax_line, visibility):
+        for a in ax_line[0].get_children():
+            a.set_visible(visibility)
         
+        for a in ax_line[1:]:
+            if a: a.set_visible(visibility)
+
+        return ax_line
 """
 ############################################################################################
 ##############################    Settings Window    #######################################
@@ -2327,7 +2386,7 @@ if __name__ == "__main__":
     app.bind("<Control-n>", lambda x: app.normalize_button.toggle())
     app.bind("<Control-r>", lambda x: app.initialize())
     app.bind("<Control-m>", lambda x: app.plot())
-    app.bind("<Left>", lambda x: app.change_plot(app.replot,-1))
-    app.bind("<Right>", lambda x: app.change_plot(app.replot,1))
+    app.bind("<Control-Left>", lambda x: app.change_plot(app.replot,-1))
+    app.bind("<Control-Right>", lambda x: app.change_plot(app.replot,1))
     app.bind("<F1>", toggle_bool)
     app.mainloop()
