@@ -1607,6 +1607,8 @@ class App(customtkinter.CTk):
             self.data[:, 1:] /= np.max(self.data[:, 1]) / self.normalize_value
         elif self.normalize_function == "Area":
             self.data[:, 1:] /= (np.sum(self.data[:, 1]) * abs(self.data[0,0]-self.data[1,0])) / self.normalize_value
+        elif self.normalize_function == "Only Factor":
+            self.data[:, 1:] *= self.normalize_value
 
         self.ymax = max([self.ymax, np.max(self.data[:, 1])])
 
@@ -1807,7 +1809,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.cmap_length = ['5','10','15','20','25','30','35','40']
         self.single_colors = {'blue':'tab:blue','orange':'tab:orange','green':'tab:green','red':'tab:red','purple':'tab:purple','brown':'tab:brown','pink':'tab:pink','gray':'tab:gray','olive':'tab:olive','cyan':'tab:cyan'}
         self.plot_type = {'Linear': 'errorbar', 'Semi Logarithmic x': 'semilogx', 'Semi Logarithmic y': 'semilogy', 'Log-Log plot': 'loglog'}
-        self.normalize_function = ['Maximum', 'Area']
+        self.normalize_function = ['Maximum', 'Area', 'Only Factor']
 
         App.create_label(self, column=1, row=0, columnspan=2, text="General settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
         App.create_label(self, column=1, row=4, columnspan=2, text="Image plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
@@ -1878,7 +1880,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
                     "cbar_switch_button": "Show a colorbar on the right to attribute the color to the numeric 'gray-value' between 0 and 1.", 
                     "save_plain_img_button": "When saving a figure with 'Save Figure', only the picture will be saved in the raw format.\nNote: The colormap and current size of the image will be saved.",
                     "hide_params_button": "When using a fit function, the textbox with the fit parameters in the plot will be hidden.",
-                    "normalize_list": "Only for line plots:\n- Off: Normalize to a maximum value of 1\n- On: Normalize to area of 1", 
+                    "normalize_list": "Only for line plots:\n- Maximum: Normalize to a maximum value of 1\n- Area: Normalize to area of 1\n- Only Factor: Do not normalize, just multiply the data with the factor", 
+                    "normalize_value": "Multiplicative factor to the y-data",
                     "grid_lines_button": "Use Gridlines"
                     }
         
