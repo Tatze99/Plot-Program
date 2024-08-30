@@ -386,10 +386,10 @@ class App(customtkinter.CTk):
                     "plot_button":      "Reset and reinitialize the plot \n- keybind: CTRL + R",
                     "reset_button":     "Reset and reinitialize the plot \n- delete all previous multiplots\n- keybind: CTRL + R",
                     "addplot_button":   "Plot the currently selected file",
-                    "prev_button":      "Plot the previous file in the list\n- keybind: Left Arrow key",
-                    "next_button":      "Plot the next file in the list\n- keybind: Right Arrow key",
+                    "prev_button":      "Plot the previous file in the list\n- keybind: CTRL + ←",
+                    "next_button":      "Plot the next file in the list\n- keybind: CTRL + →",
                     "multiplot_button": "Create multiple plots in one figure \n- choose rows = 1, cols = 1 for single graph multiplots\n- Press CTRL+Z to delete the previous plot\n- You can click on the subplots to replot them or set the limits\n- keybind: CTRL + M",
-                    "uselabels_button": "Create x,y-labels, add a legend\n- Legend settings: choose location, add file name to legend",
+                    "uselabels_button": "Create x,y-labels, add a legend and title\n- Legend settings: choose location, add file name to legend",
                     "uselims_button":   "Choose x,y-limits for line and image plots\n- x-limits stay the same when resetting the plot\n- y-limits will change to display all figures\n- the limits can be set with the sliders or typed in manually", 
                     "fit_button":       "Fit a function to the current data set\n- initial fit parameters can be set when the fit does not converge\n- use slider to fit only parts of the function\n- the textbox can be hidden via the 'Plot settings' -> 'Hide fit params'",
                     "normalize_button": "Normalize the plot\n- data file: normalize to max = 1 or area = 1 (Plot settings -> normalize Area)\n- image file: enhance the contrast of the image (can be changed manually: Plot settings -> pixel range)\n- keybind: CTRL + N", 
@@ -400,6 +400,7 @@ class App(customtkinter.CTk):
                     "ent_subplot": "Specify the number of sub plots in each multiplot window\n- Not used for plotting in a single window (rows=1, cols=1)", 
                     "two_axis_button": "Initiate a second y-axis on the right\n- The x-axis is assumed to be the same\n- The button is reset to 'off' when a new multiplot window is created",
                     "legend_settings_button": "- Set the location of the legend\n- Customize the display of {name} by using a sub-string of the file name", 
+                    "update_labels_button": "- Update the labels and titles\n - To update the legend, select the line by clicking on it (hide the line)",
                     "choose_ax_button": "Choose the axis, along which the lineout point will move",
                     "save_lineout_button": "Save the lineout into a data file",
                     "yerror_area_button": "off: Use errorbars with caps\non: Display the y-error as a shaded area above and below the line",
@@ -499,7 +500,7 @@ class App(customtkinter.CTk):
 
         return slider
     
-    def create_range_slider(self, from_, to, row, column, width=200, text=None, init_value=None, command=None, columnspan=1, number_of_steps=1000, padx = 10, pady=5, sticky='w', textwidget=False,**kwargs):
+    def create_range_slider(self, from_, to, row, column, width=200, text=None, init_value=None, command=None, columnspan=1, number_of_steps=None, padx = 10, pady=5, sticky='w', textwidget=False,**kwargs):
         slider = CTkRangeSlider(self, from_=from_, to=to, width=width, command=command, number_of_steps=number_of_steps)
         slider.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if text is not None:
@@ -780,6 +781,9 @@ class App(customtkinter.CTk):
 
     # Make the legend for line plots
     def make_line_legend(self, axis):
+        if self.ent_legend.get() == "":
+            return
+        
         if self.legend is not None:
             self.legend.remove()
 
@@ -888,7 +892,7 @@ class App(customtkinter.CTk):
         axis.set_yscale('log' if self.plot_type in ["semilogy", "loglog"] else 'linear')
         axis.set_xscale('log' if self.plot_type in ["semilogx", "loglog"] else 'linear')
 
-        if self.uselabels_button.get() and (self.ent_legend.get() != "") and ax != "ax_second": 
+        if self.uselabels_button.get() and ax != "ax_second": 
             self.make_line_legend(axis)
 
         # create the fit
@@ -1152,7 +1156,7 @@ class App(customtkinter.CTk):
             colors = plt.get_cmap(self.cmap).colors
             n = (self.plot_counter-1) % len(colors)
             self.ax1.set_prop_cycle(cycler(color=colors[n:]+ colors[:n]))
-            if self.uselabels_button.get() and (self.ent_legend.get() != ""): 
+            if self.uselabels_button.get(): 
                 self.make_line_legend(self.ax1)
 
         self.canvas.draw()
@@ -1211,7 +1215,7 @@ class App(customtkinter.CTk):
                 # create the entry objects "self.xlim_lbox" ...
                 setattr(self, lim_lbox, App.create_entry(self.settings_frame, row=row+i+1, column=1, width=50))
                 setattr(self, lim_rbox, App.create_entry(self.settings_frame, row=row+i+1, column=4, width=50))
-                setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=new_value_min, to=new_value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), number_of_steps=1000, columnspan=2, init_value=[value_min, value_max]))
+                setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=new_value_min, to=new_value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), columnspan=2, init_value=[value_min, value_max]))
 
                 # get the name of the created object, first the entry, second the slider
                 entryl_widget = getattr(self,lim_lbox)
@@ -1421,11 +1425,10 @@ class App(customtkinter.CTk):
         self.plot_axis_parameters("ax_second")
         self.ax_second.set_ylabel("")
 
-        asp = np.diff(self.ax_second.get_xlim())[0] / max_value*asp_image
-        logging.info(f"aspect = {asp}, max value = {max_value}, asp image={asp_image},  {self.x_lineout_min}, {self.x_lineout_max}, {self.y_lineout_min}, {self.y_lineout_max}")
+        self.asp = np.diff(self.ax_second.get_xlim())[0] / max_value*asp_image
+        logging.info(f"aspect = {self.asp}, max value = {max_value}, asp image={asp_image},  {self.x_lineout_min}, {self.x_lineout_max}, {self.y_lineout_min}, {self.y_lineout_max}")
 
-        self.ax_second.set_aspect(abs(asp))
-        self.ax_second.set_ylim(0, max_value)
+        self.update_lineout_aspect()
 
         self.canvas.draw()
 
@@ -1457,6 +1460,7 @@ class App(customtkinter.CTk):
         self.axline.set_data([x1, x2],[y1, y2])
         self.axpoint.set_data([self.lineout_xvalue], [self.lineout_yvalue])
         self.lineout_plot.set_data(self.lineout_data[:,0], self.lineout_data[:,1])
+        self.update_lineout_aspect()
 
         if self.use_fit == 1:
             minimum = np.argmin(abs(self.lineout_data[:,0] - self.fit_window.fit_borders_slider.get()[0]))
@@ -1465,6 +1469,9 @@ class App(customtkinter.CTk):
             self.fit_lineout.set_ydata(self.fit_plot(self.function, self.params, self.lineout_data[minimum:maximum,:]))
         self.canvas.draw()
 
+    def update_lineout_aspect(self):
+        self.ax_second.set_aspect(abs(self.asp)/(self.clim[1]-self.clim[0]))
+        self.ax_second.set_ylim(self.clim)
     #############################################################
     ############### Fouriertransformation #######################
     #############################################################
@@ -1717,6 +1724,7 @@ class App(customtkinter.CTk):
 
     # Click on a subplot to select it as the current plot
     def on_click(self, event):
+        print(self.rows, self.cols)
         if self.rows == 1 and self.cols == 1:
             return
 
@@ -2017,6 +2025,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
 
         if val == None and hasattr(self.app, 'image'): 
             self.app.image.set_clim(self.app.clim)
+            if self.app.lineout_button.get():
+                self.app.update_lineout_aspect()
             self.app.canvas.draw()
 
     def toggle_boolean(self, boolean):
