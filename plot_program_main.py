@@ -337,7 +337,7 @@ class App(customtkinter.CTk):
         self.tabview.add("Data Table")
         self.tabview.tab("Show Plots").columnconfigure(0, weight=1)
         self.tabview.tab("Show Plots").rowconfigure(0, weight=1)
-        
+
         #buttons
         frame = self.sidebar_frame
         
@@ -422,7 +422,7 @@ class App(customtkinter.CTk):
         self.folder_path = self.create_entry(column=2, row=0, text="Folder path", columnspan=2, width=600, padx=10, pady=10, sticky="w")
         self.folder_path.bind("<KeyRelease>", self.load_file_list)
         #dropdown menu
-        self.optmenu = self.create_combobox(values=filelist, text="File name",row=1, column=2, columnspan=2, width=600, sticky="w")
+        self.optmenu = self.create_combobox(values=filelist, text="File name",row=1, column=2, columnspan=2, width=600, sticky="w", command=lambda x: self.determine_data_columns(x))
         if not filelist == []: self.optmenu.set(filelist[0])
 
     # initialize all widgets on the settings frame
@@ -836,14 +836,7 @@ class App(customtkinter.CTk):
         axis.tick_params(which='both', direction='in')
         
         # hide unused column entries
-        for i, entry in enumerate(self.column_dict):
-            if i < 2*len(data[0,:]):
-                self.column_dict[entry].grid()
-            else:
-                self.column_dict[entry].grid_remove()
-                if type(self.column_dict[entry]) is customtkinter.CTkOptionMenu:
-                    self.column_dict[entry].set(None)
-
+        self.hide_column_entries(data)
 
         # create dictionary of the plot key word arguments
         self.plot_kwargs = dict(
@@ -1127,6 +1120,23 @@ class App(customtkinter.CTk):
         self.optmenu.configure(values=filelist)
         self.optmenu.set(filelist[0])
     
+    def hide_column_entries(self, data):
+        for i, entry in enumerate(self.column_dict):
+            if i < 2*len(data[0,:]):
+                self.column_dict[entry].grid()
+            else:
+                self.column_dict[entry].grid_remove()
+                if type(self.column_dict[entry]) is customtkinter.CTkOptionMenu:
+                    self.column_dict[entry].set(None)
+
+    def determine_data_columns(self, file_name):
+        if not file_name.endswith(image_type_names):
+            data = self.load_plot_data(os.path.join(self.folder_path.get(), file_name))
+            self.hide_column_entries(data)
+        else:
+            return
+
+
     def control_z(self):
         
         if self.replot and (self.rows != 1 or self.cols != 1) and self.plot_counter > 2:
