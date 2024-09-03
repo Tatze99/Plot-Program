@@ -317,6 +317,7 @@ class App(customtkinter.CTk):
         self.convert_pixels = customtkinter.BooleanVar(value=False)
         self.convert_rgb_to_gray = customtkinter.BooleanVar(value=False)
         self.update_labels_multiplot = customtkinter.BooleanVar(value=True)
+        self.show_title_entry = customtkinter.BooleanVar(value=True)
         self.rows = 1
         self.cols = 1
         self.mouse_clicked_on_canvas = False
@@ -367,7 +368,6 @@ class App(customtkinter.CTk):
         self.xval_min_entry   = App.create_entry(self.tabview.tab("Data Table"), row=0, column=3, width=90, text="x-limits", placeholder_text="x min")
         self.xval_max_entry   = App.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=90, placeholder_text="x max")
         self.function_entry   = App.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)")
-        
 
         self.column_dict = {}
         self.column_values = ["None", "x-values", "y-values", "x-error", "y-error"]
@@ -396,7 +396,7 @@ class App(customtkinter.CTk):
                     "lineout_button": "Display a lineout function\n- only used for images, no multiplot possible", 
                     "FFT_button": "Display the |FT(f)|² of the data\n- limits of the Fourier window can be set\n- zero padding (factor determines number of zeros/x-array length)\n- can only be used for line plots, Images don't work.\n- if the spectrum is given in nm, the FT will be calculated in fs",
                     "data_table_button": "Check this to plot own custom data in the window below\n- columns must be separated by a space or tab (not comma or semicolon)\n- decimal separator: point and comma works\n- You can also plot data by using numpy functions, the argument must be called 'x'.",
-                    "ent_legend": "Add a Legend to the plot\n- Write '{name}' in the textbox if you want to add the file name to the legend.\n- The displayed file name can be customized in the legend settings.\n You can access more data information with the following keys:\n- {xmax},{ymax} - x,y coordinate of the maximum point\n- {fwhm} - FWHM around the maximum point\n- {x_res} - x-axis resolution",
+                    "ent_legend": "Add a Legend to the plot\n- Write '{name}' in the textbox if you want to add the file name to the legend.\n- The displayed file name can be customized in the legend settings.\n- You can access more data information with the following keys:\n+ {xmax},{ymax} - x,y coordinate of the maximum point\n+ {fwhm} - FWHM around the maximum point\n+ {x_res} - x-axis resolution\n- For files with multiple y-columns, the legend labels can be set by writing every label into a separate line",
                     "ent_subplot": "Specify the number of sub plots in each multiplot window\n- Not used for plotting in a single window (rows=1, cols=1)", 
                     "two_axis_button": "Initiate a second y-axis on the right\n- The x-axis is assumed to be the same\n- The button is reset to 'off' when a new multiplot window is created",
                     "legend_settings_button": "- Set the location of the legend\n- Customize the display of {name} by using a sub-string of the file name", 
@@ -442,9 +442,9 @@ class App(customtkinter.CTk):
         label.grid(row=row, column=column, sticky=sticky, columnspan=columnspan, padx=padx, pady=pady, **kwargs)
         return label
 
-    def create_entry(self, row, column, width=200, text=None, columnspan=1, padx=10, pady=5, placeholder_text=None, sticky='w', sticky_label='e', textwidget=False, init_val=None, **kwargs):
-        entry = CustomEntry(self, width, placeholder_text=placeholder_text, **kwargs)
-        entry.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
+    def create_entry(self, row, column, width=200, height=28, text=None, columnspan=1, rowspan=1, padx=10, pady=5, placeholder_text=None, sticky='w', sticky_label='e', textwidget=False, init_val=None, **kwargs):
+        entry = CustomEntry(self, width, height, placeholder_text=placeholder_text, **kwargs)
+        entry.grid(row=row, column=column, columnspan=columnspan, rowspan=rowspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if init_val is not None:
             entry.insert(0,str(init_val))
         if text is not None:
@@ -523,6 +523,18 @@ class App(customtkinter.CTk):
         for row in data:
             text_widget.insert("end", " \t ".join(map(str, np.round(row,2))) + "\n")
         return text_widget
+    
+    def create_textbox(self, row, column, width=200, height=28, text=None, columnspan=1, rowspan=1, padx=10, pady=5, sticky='w', sticky_label='e', textwidget=False, init_val=None, **kwargs):
+        textbox = customtkinter.CTkTextbox(self, width, height, **kwargs)
+        textbox.grid(row=row, column=column, columnspan=columnspan, rowspan=rowspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
+        if init_val is not None:
+            textbox.insert(0,str(init_val))
+        if text is not None:
+            textbox_label = App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e', sticky=sticky_label)
+            if textwidget == True:
+                return (textbox, textbox_label)
+
+        return textbox
     
     #############################################################
     ######################## Do the plots #######################
@@ -781,7 +793,7 @@ class App(customtkinter.CTk):
 
     # Make the legend for line plots
     def make_line_legend(self, axis):
-        if self.ent_legend.get() == "":
+        if self.ent_legend.get("0.0","end-1c") == "":
             return
         
         if self.legend is not None:
@@ -856,10 +868,13 @@ class App(customtkinter.CTk):
 
         ######### create the plot
         plot = getattr(axis, "errorbar")
+        text_lines = self.get_textbox_lines(self.ent_legend)
   
-        for y_data in y_data_list:
+        for index, y_data in enumerate(y_data_list):
             if self.uselabels_button.get(): 
-                self.plot_kwargs["label"] = self.ent_legend.get().format(name=self.optmenu.get()[self.legend_name], 
+                #self.ent_legend.get("0.0","end-1c")
+                if index >= len(text_lines): index = 0
+                self.plot_kwargs["label"] = text_lines[index].format(name=self.optmenu.get()[self.legend_name], 
                                                                          ymax=np.max(y_data), 
                                                                          xmax=x_data[np.argmax(y_data)], 
                                                                          fwhm=find_fwhm(x_data,y_data)[-1], 
@@ -986,8 +1001,8 @@ class App(customtkinter.CTk):
         #########
 
         # use axis labels and add a legend
-        if self.uselabels_button.get() and (self.ent_legend.get() != ""): 
-            legend_label = self.ent_legend.get().format(name=self.optmenu.get()[self.legend_name])
+        if self.uselabels_button.get() and (self.ent_legend.get("0.0","end-1c") != ""): 
+            legend_label = self.ent_legend.get("0.0","end-1c").format(name=self.optmenu.get()[self.legend_name])
             self.ax1.legend(labels=[legend_label], handles=[self.ax1.plot([],[])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, fontsize=self.legend_font_size,fancybox=True,**self.legend_type)
 
         # use a scalebar on the bottom right corner
@@ -1121,6 +1136,8 @@ class App(customtkinter.CTk):
         self.optmenu.set(filelist[0])
     
     def hide_column_entries(self, data):
+        if data.ndim == 1: 
+            return
         for i, entry in enumerate(self.column_dict):
             if i < 2*len(data[0,:]):
                 self.column_dict[entry].grid()
@@ -1136,6 +1153,15 @@ class App(customtkinter.CTk):
         else:
             return
 
+    def get_textbox_lines(self, textbox):
+        line_text = []
+        # Retrieve the number of lines in the Text widget
+        num_lines = int(textbox.index('end-1c').split('.')[0])
+
+        # Iterate over each line
+        for i in range(1, num_lines + 1):
+            line_text.append(textbox.get(f"{i}.0", f"{i}.end"))
+        return line_text
 
     def control_z(self):
         
@@ -1153,7 +1179,6 @@ class App(customtkinter.CTk):
             # remove the line and possible caps and error-bar lines
             self.plot_container[-1][0].set_label("")
             for item in list(flatten(self.plot_container[-1])):
-                print(item)
                 try:
                     item.remove()
                 except: pass
@@ -1271,10 +1296,11 @@ class App(customtkinter.CTk):
         self.labels_title = App.create_label(self.settings_frame, text="Labels", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
         self.ent_ylabel   = App.create_entry(self.settings_frame,column=3, row=row+1, columnspan=2, width=110, placeholder_text="y label")
         self.ent_xlabel, self.ent_label_text   = App.create_entry(self.settings_frame,column=1, row=row+1, columnspan=2, width=110, placeholder_text="x label", text="x / y", textwidget=True)
-        self.ent_legend, self.ent_legend_text  = App.create_entry(self.settings_frame,column=1, row=row+2, columnspan=4, width=110, placeholder_text="{name}",text="Legend", textwidget=True)
+        self.ent_legend, self.ent_legend_text  = App.create_textbox(self.settings_frame,column=1, row=row+2, columnspan=4, rowspan=2, width=110,text="Legend", textwidget=True)
         self.ent_title, self.ent_title_text  = App.create_entry(self.settings_frame,column=1, row=row+3, columnspan=4, width=110, placeholder_text="title",text="Title", textwidget=True)
         self.legend_settings_button = App.create_button(self.settings_frame, text="Settings", command=lambda: self.open_toplevel(LegendWindow, "Legend Settings"), column=3, row=row+2, columnspan=2, image=self.img_settings, width=110, sticky='w')
         self.update_labels_button = App.create_button(self.settings_frame, text="Update", command=self.update_labels, column=3, row=row+3, columnspan=2, image=self.img_reset, width=110, sticky='w')
+        self.ent_legend.configure(border_width=2)
         self.use_labels()
         
     def use_labels(self):
@@ -1283,6 +1309,14 @@ class App(customtkinter.CTk):
         if self.uselabels_button.get():
             self.settings_frame.grid() 
             [getattr(self, name).grid() for name in widget_names]
+            if self.show_title_entry.get():
+                self.ent_legend.configure(height = 28)
+                self.ent_legend.grid(rowspan=1)
+            else:
+                self.ent_legend.configure(height = 66)
+                self.ent_legend.grid(rowspan=2)
+                self.ent_title.grid_remove()
+                self.ent_title_text.grid_remove()
         else:
             [getattr(self, name).grid_remove() for name in widget_names]
             self.close_settings_window()    
@@ -1293,11 +1327,11 @@ class App(customtkinter.CTk):
         ax.set_ylabel(self.ent_ylabel.get())
         self.fig.suptitle(self.ent_title.get())
 
-        if self.image_plot and self.ent_legend.get() != "":
-            self.ax1.legend(labels=[self.ent_legend.get()], handles=[self.ax1.plot([],[])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, fontsize=self.legend_font_size,fancybox=True,**self.legend_type)
+        if self.image_plot and self.ent_legend.get("0.0","end-1c") != "":
+            self.ax1.legend(labels=[self.ent_legend.get("0.0","end-1c")], handles=[self.ax1.plot([],[])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, fontsize=self.legend_font_size,fancybox=True,**self.legend_type)
         elif self.clicked_axis_index is not None:
             if not self.plot_container[self.clicked_axis_index][0][0].get_visible():
-                self.plot_container[self.clicked_axis_index][0].set_label(self.ent_legend.get())
+                self.plot_container[self.clicked_axis_index][0].set_label(self.ent_legend.get("0.0","end-1c"))
 
             for ax_line in self.plot_container:
                 ax_line = self.change_plot_visibility(ax_line, visibility=True)
@@ -1734,7 +1768,6 @@ class App(customtkinter.CTk):
 
     # Click on a subplot to select it as the current plot
     def on_click(self, event):
-        print(self.rows, self.cols)
         if self.rows == 1 and self.cols == 1:
             return
 
@@ -2053,7 +2086,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
 class LegendWindow(customtkinter.CTkToplevel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.geometry("500x250")
+        self.geometry("600x250")
         self.title("Legend Settings")
         self.app = app
         self.legend_type = {'Best location': {'loc': 'best'}, 
@@ -2071,10 +2104,11 @@ class LegendWindow(customtkinter.CTkToplevel):
                             }
 
         self.grid_columnconfigure(0, minsize=120)
+        self.grid_columnconfigure(3, minsize=30)
         App.create_label(self, column=1, row=0, columnspan=2, text="Legend Settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
 
         # values for line plots
-        self.reset_button       = App.create_button(self, column=3, row=1, text="Reset Settings",   command=self.reset_values, width=130)
+        self.reset_button       = App.create_button(self, column=4, row=1, text="Reset Settings",   command=self.reset_values, width=130)
         self.legend_type_list   = App.create_Menu(self, column=1, row=1, columnspan=2, values=list(self.legend_type.keys()), text="Legend location", command=self.apply_settings)
         self.legend_name_list   = App.create_Menu(self, column=1, row=2, columnspan=2, values=list(self.legend_name.keys()), text="Legend: {name}", command=self.apply_settings)
         self.slice_var = customtkinter.StringVar()  # StringVar to hold the label value
@@ -2086,7 +2120,8 @@ class LegendWindow(customtkinter.CTkToplevel):
         self.fontsize_slider   = App.create_slider(    self, column=1, row=3, columnspan=2, from_=5, to=20, 
                                                     command= lambda value, var="fontsize_var": self.update_fontsize_value(value, var), text="font size", width=160, number_of_steps=15, init_val=self.app.legend_font_size)
 
-        self.update_labels_button  = App.create_switch(self, column=3, row=2, text="Update labels",   command=lambda: self.toggle_boolean(self.app.update_labels_multiplot))
+        self.update_labels_button  = App.create_switch(self, column=4, row=2, text="Update labels",   command=lambda: self.toggle_boolean(self.app.update_labels_multiplot))
+        self.show_title_entry_button  = App.create_switch(self, column=4, row=3, text="Show title entry",   command=lambda: (self.toggle_boolean(self.app.show_title_entry), self.app.use_labels()))
         #set initial values
         self.init_values()
         
@@ -2100,6 +2135,7 @@ class LegendWindow(customtkinter.CTkToplevel):
         self.slice_var.set(self.app.optmenu.get())
         self.fontsize_var.set(str(round(self.app.legend_font_size)))
         if self.app.update_labels_multiplot.get(): self.update_labels_button.select()
+        if self.app.show_title_entry.get(): self.show_title_entry_button.select()
 
     # reset to defaul values
     def reset_values(self):
@@ -2349,16 +2385,22 @@ class CreateToolTip(object):
 
     def showtip(self, event=None):
         x = y = 0
-        x, y, cx, cy = self.widget.bbox("insert")
-        x += self.widget.winfo_rootx() + 0
-        y += self.widget.winfo_rooty() + 40
-        # creates a toplevel window
-        self.tw = customtkinter.CTkToplevel(self.widget, fg_color = ["#f9f9fa","#343638"]) #["#979da2","#565b5e"]
-        # Leaves only the label and removes the app window
-        self.tw.wm_overrideredirect(True)
-        self.tw.wm_geometry("+%d+%d" % (x, y))
-        label = customtkinter.CTkLabel(self.tw, text=self.text + "\nPress F1 to deactivate tool tips", justify='left', wraplength = self.wraplength, fg_color = "transparent", padx=10, pady=5)
-        label.pack()
+
+        bbox = self.widget.bbox("insert")
+
+        if bbox:
+            x, y, cx, cy = self.widget.bbox("insert")
+            x += self.widget.winfo_rootx() + 0
+            y += self.widget.winfo_rooty() + 40
+            # creates a toplevel window
+            self.tw = customtkinter.CTkToplevel(self.widget, fg_color = ["#f9f9fa","#343638"]) #["#979da2","#565b5e"]
+            # Leaves only the label and removes the app window
+            self.tw.wm_overrideredirect(True)
+            self.tw.wm_geometry("+%d+%d" % (x, y))
+            label = customtkinter.CTkLabel(self.tw, text=self.text + "\nPress F1 to deactivate tool tips", justify='left', wraplength = self.wraplength, fg_color = "transparent", padx=10, pady=5)
+            label.pack()
+        else: 
+            logging.error("The cursor of the text widget is invisible and the bounding box cannot be determined")
 
     def hidetip(self):
         tw = self.tw
@@ -2395,7 +2437,7 @@ class CustomEntry(customtkinter.CTkEntry):
         self.insert(index, text)  # Insert the new text
 
 if __name__ == "__main__":
-    level = logging.INFO
+    level = logging.WARNING
     fmt = '[%(levelname)s] %(asctime)s - %(message)s'
     logging.basicConfig(level=level, format=fmt)
 
