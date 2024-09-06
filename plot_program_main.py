@@ -46,7 +46,7 @@ image_type_names = ('png','.jpg', '.jpeg', '.JPG', '.bmp', '.webp', '.tif', '.ti
 sequential_colormaps = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper','Purples', 'Blues', 'Greens', 'Oranges', 'Reds','twilight', 'hsv', 'rainbow', 'jet', 'turbo', 'gnuplot', 'brg']
 
 # this causes problems at smaller screen sizes with scaled text size
-ctypes.windll.shcore.SetProcessDpiAwareness(0)
+ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
 Standard_path = os.path.dirname(os.path.abspath(__file__))
 filelist = natsorted([fname for fname in os.listdir(Standard_path) if fname.endswith(file_type_names)])
@@ -332,7 +332,7 @@ class App(customtkinter.CTk):
 
         App.create_label(self.sidebar_frame, text="GIES v."+version_number, font=customtkinter.CTkFont(size=20, weight="bold"),row=0, column=0, padx=20, pady=(10,15), sticky=None)
         
-        self.tabview = customtkinter.CTkTabview(self, width=250)
+        self.tabview = customtkinter.CTkTabview(self, width=250, command=lambda: self.toggle_toolbar(self.tabview.get()))
         self.tabview.grid(row=3, column=1, padx=(10, 10), pady=(20, 0), columnspan=2, sticky="nsew", rowspan=10)
         self.tabview.add("Show Plots")
         self.tabview.add("Data Table")
@@ -546,6 +546,16 @@ class App(customtkinter.CTk):
             for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button", "FFT_button"]:
                 getattr(self, name).configure(state="enabled")
 
+            self.fig = plt.figure(constrained_layout=True, dpi=150) 
+            self.canvas = FigureCanvasTkAgg(self.fig, master=self.tabview.tab("Show Plots"))
+            self.canvas_widget = self.canvas.get_tk_widget()
+            self.canvas_widget.pack(fill="both", expand=True)
+            self.toolbar = self.create_toolbar()
+            
+            self.canvas.mpl_connect('pick_event', self.on_pick)
+            self.canvas.mpl_connect("button_press_event", self.on_click)    # Choosing the axis by clicking on it
+
+
         if self.lineout_button.get():
             self.initialize_lineout(self.choose_ax_button.get())
         elif self.FFT_button.get():
@@ -554,20 +564,15 @@ class App(customtkinter.CTk):
             self.initialize_plot()
 
     def initialize_plot(self):
-        
-        # Clear the previous plot content
-        if self.ax1 is not None:
-            if self.ax2 is not None: self.ax2.clear()
-            self.ax2 = None
-            self.first_ax2 = True
-            self.ax1.clear()  
-            self.canvas.get_tk_widget().destroy()
-            self.toolbar.destroy()
-            self.plot_counter = 1      # counts how many plots there are
-            self.plot_index = 1        # index of the currently used plot
-            self.sub_plot_counter = 1  # number of subplots
-            self.mouse_clicked_on_canvas = False
-            plt.close(self.fig)
+        self.fig.clear()
+        self.canvas.draw()
+        self.ax2 = None
+        self.ax1 = None
+        self.first_ax2 = True 
+        self.plot_counter = 1      # counts how many plots there are
+        self.plot_index = 1        # index of the currently used plot
+        self.sub_plot_counter = 1  # number of subplots
+        self.mouse_clicked_on_canvas = False
             
         self.ax_container = []
         self.legend = None
@@ -575,27 +580,7 @@ class App(customtkinter.CTk):
         if self.replot and not self.lineout_button.get() and not self.FFT_button.get():
             self.rows=float(self.ent_rows.get())
             self.cols=float(self.ent_cols.get())
-        
-        dpi = 150
-        if self.canvas_ratio == None:
-            self.tabview.update_idletasks()  # Ensure the widget is updated to get the correct size
-            width = (self.tabview.winfo_width() - 12) / dpi
-            height = (self.tabview.winfo_height() - 90) / dpi
-            sticky = "news"
-            
-        else:
-            width = self.canvas_width/2.54
-            height = self.canvas_height/2.54 if self.canvas_ratio == 0 else self.canvas_width/(self.canvas_ratio*2.54)
-            sticky = None
 
-        self.fig = plt.figure(figsize=(width, height),constrained_layout=True, dpi=dpi) 
-        self.fig.suptitle("") # dummy suptitle to allocate the extra space an invisible title would take
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.tabview.tab("Show Plots"))
-        self.canvas.get_tk_widget().grid(row=0, column=0, sticky=sticky)
-        
-        self.toolbar = self.create_toolbar()
-        self.canvas.mpl_connect('pick_event', self.on_pick)
-        self.canvas.mpl_connect("button_press_event", self.on_click)    # Choosing the axis by clicking on it
         self.ymax = float('-inf')
         self.ymin = float('inf')
         self.xmax = float('-inf')
@@ -717,11 +702,16 @@ class App(customtkinter.CTk):
         if self.ticks_settings == "no ticks":
             axis.set_xticks([])
             axis.set_yticks([])
-        elif self.ticks_settings == "smart" and not self.mid_axis_button.get():
+        elif "smart" in self.ticks_settings and not self.mid_axis_button.get():
             if not last_row: 
                 axis.set_xticklabels([])
             if not first_col:
                 axis.set_yticklabels([])
+
+            if self.ticks_settings == "smart + tight" and self.label_settings == "smart":
+                self.fig.get_layout_engine().set(w_pad=0, h_pad=0, hspace=0, wspace=0)
+            else:
+                self.fig.set_constrained_layout(True)
 
         if self.use_minor_ticks.get():
             axis.minorticks_on()
@@ -1012,7 +1002,7 @@ class App(customtkinter.CTk):
         
         # use a colorbar
         if self.use_colorbar.get():
-            self.cbar = self.fig.colorbar(self.image, fraction=0.045, pad=0.01)
+            self.cbar = self.fig.colorbar(self.image, location="top", pad=0.01)
 
         self.plot_axis_parameters("ax1", plot_counter = self.plot_index)
         
@@ -1664,15 +1654,39 @@ class App(customtkinter.CTk):
         self.ymax = max([self.ymax, np.max(self.data[:, 1])])
 
     def create_toolbar(self) -> customtkinter.CTkFrame:
-        toolbar_frame = customtkinter.CTkFrame(master=self.tabview.tab("Show Plots"))
-        toolbar_frame.grid(row=1, column=0, sticky="ew")
+        # toolbar_frame = customtkinter.CTkFrame(master=self.tabview.tab("Show Plots"))
+        # toolbar_frame.grid(row=1, column=0, sticky="ew")
+        toolbar_frame = customtkinter.CTkFrame(self)
+        toolbar_frame.grid(row=20, column=1, columnspan=2, padx=(10), sticky="ew")
         toolbar = CustomToolbar(self.canvas, toolbar_frame)
         toolbar.config(background=self.color)
         toolbar._message_label.config(background=self.color, foreground=self.text_color, font=(15))
         toolbar.winfo_children()[-2].config(background=self.color)
         toolbar.update()
         return toolbar_frame
-          
+    
+    def toggle_toolbar(self, value):
+        if value == "Show Plots":
+            self.toolbar.grid()
+        else:
+            self.toolbar.grid_remove()
+
+    def update_canvas_size(self):
+        self.canvas_widget.pack_forget()
+
+        if self.canvas_ratio is not None:
+            width = self.canvas_width/2.54
+            height = self.canvas_height/2.54 if self.canvas_ratio == 0 else self.canvas_width/(self.canvas_ratio*2.54)
+            self.fig.set_size_inches(width, height)
+            self.canvas_widget.pack(expand=True, fill=None) 
+            self.canvas_widget.config(width=self.fig.get_size_inches()[0] * self.fig.dpi, height=self.fig.get_size_inches()[1] * self.fig.dpi)
+        else:
+            width = (self.tabview.winfo_width() - 12) / self.fig.dpi
+            height = (self.tabview.winfo_height() - 50) / self.fig.dpi
+            self.fig.set_size_inches(w = width, h=height, forward=True)  # Re-enable dynamic resizing
+            self.canvas_widget.pack(fill="both", expand=True) 
+
+        self.canvas.draw()  # Redraw canvas to apply the automatic size
     # Check if there are any non-number characters in the file and skip these lines
     def skip_rows(self, file_path):
         skiprows = 0
@@ -1689,9 +1703,9 @@ class App(customtkinter.CTk):
         file_name = customtkinter.filedialog.asksaveasfilename()
         if (self.image_plot and self.save_plain_image.get() and file_name.endswith((".pdf",".png",".jpg",".jpeg",".PNG",".JPG",".svg"))):
             if self.uselims_button.get(): 
-                plt.imsave(file_name, self.data[int(self.y_l):int(self.y_r),int(self.x_l):int(self.x_r)], cmap=self.cmap_imshow)
+                plt.imsave(file_name, np.flipud(self.data[int(self.y_l):int(self.y_r),int(self.x_l):int(self.x_r)]), cmap=self.cmap_imshow)
             else: 
-                plt.imsave(file_name, self.data, cmap=self.cmap_imshow)
+                plt.imsave(file_name, np.flipud(self.data), cmap=self.cmap_imshow, vmin= self.clim[0], vmax=self.clim[1])
         elif file_name.endswith((".pdf",".png",".jpg",".jpeg",".PNG",".JPG",".svg")): 
             self.fig.savefig(file_name, bbox_inches='tight')
         elif file_name.endswith((".dat",".txt",".csv")):
@@ -1843,7 +1857,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
 
         # general values
         self.canvas_ratio = {'Auto': None, 'Custom': 0,'4:3 ratio': 4/3, '16:9 ratio': 16/9, '3:2 ratio': 3/2, '3:1 ratio': 3,'2:1 ratio': 2, '1:1 ratio': 1, '1:2 ratio': 0.5}
-        self.ticks_settings = ["smart", "default", "no ticks"]
+        self.ticks_settings = ["smart", "smart + tight", "default", "no ticks"]
         self.label_settings = ["smart", "default"]
         # values for image plots
         self.cmap_imshow = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper']
@@ -2048,6 +2062,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app.cmap_length = int(self.cmap_length_list.get())
         self.app.single_color = self.single_colors[self.single_colors_list.get()]
         self.app.normalize_function = self.normalize_list.get()
+
+        self.app.update_canvas_size()
 
         if self.cmap_list.get() in sequential_colormaps:
             self.cmap_length_list.configure(state="enabled")
