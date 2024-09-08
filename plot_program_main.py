@@ -4,7 +4,7 @@ Created on Sun Sep 18 14:28:26 2022
 
 @author: Martin
 
-to do: implement minor ticks as option
+to do: add custom textbox, ax-lines
 """
 import os
 from CTkRangeSlider import *
@@ -45,7 +45,6 @@ file_type_names = ('.csv', '.dat', '.txt', '.png', '.jpg', '.jpeg', '.spec', '.J
 image_type_names = ('png','.jpg', '.jpeg', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm')
 sequential_colormaps = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper','Purples', 'Blues', 'Greens', 'Oranges', 'Reds','twilight', 'hsv', 'rainbow', 'jet', 'turbo', 'gnuplot', 'brg']
 
-# this causes problems at smaller screen sizes with scaled text size
 ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
 Standard_path = os.path.dirname(os.path.abspath(__file__))
@@ -128,7 +127,7 @@ def get_border_points(x0, y0, angle, array_shape):
     if theta == 0:
         intersections = [(0, y0), (xdim-1, y0)]
 
-    elif (theta == 90 or theta == -90):
+    elif (angle == 90 or angle == -90):
         intersections = [(x0, 0), (x0, ydim-1)]
 
     else: 
@@ -396,7 +395,7 @@ class App(customtkinter.CTk):
                     "lineout_button": "Display a lineout function\n- only used for images, no multiplot possible", 
                     "FFT_button": "Display the |FT(f)|² of the data\n- limits of the Fourier window can be set\n- zero padding (factor determines number of zeros/x-array length)\n- can only be used for line plots, Images don't work.\n- if the spectrum is given in nm, the FT will be calculated in fs",
                     "data_table_button": "Check this to plot own custom data in the window below\n- columns must be separated by a space or tab (not comma or semicolon)\n- decimal separator: point and comma works\n- You can also plot data by using numpy functions, the argument must be called 'x'.",
-                    "ent_legend": "Add a Legend to the plot\n- Write '{name}' in the textbox if you want to add the file name to the legend.\n- The displayed file name can be customized in the legend settings.\n- You can access more data information with the following keys:\n+ {xmax},{ymax} - x,y coordinate of the maximum point\n+ {fwhm} - FWHM around the maximum point\n+ {x_res} - x-axis resolution\n- For files with multiple y-columns, the legend labels can be set by writing every label into a separate line",
+                    "ent_legend": "Add a Legend to the plot\n- Write '{name}' in the textbox if you want to add the file name to the legend.\n- The displayed file name can be customized in the legend settings.\n- You can access more data information with the following keys:\n+ {xmax},{ymax} - x,y coordinate of the maximum point\n+ {fwhm} - FWHM around the maximum point\n+ {x_res} - x-axis resolution\n- For files with multiple y-columns, the legend labels can be set by writing every label into a separate line\n- The legend for the second plot of a lineout or a FFT can be accessed with the second line of the legend entry",
                     "ent_subplot": "Specify the number of sub plots in each multiplot window\n- Not used for plotting in a single window (rows=1, cols=1)", 
                     "two_axis_button": "Initiate a second y-axis on the right\n- The x-axis is assumed to be the same\n- The button is reset to 'off' when a new multiplot window is created",
                     "legend_settings_button": "- Set the location of the legend\n- Customize the display of {name} by using a sub-string of the file name", 
@@ -549,8 +548,8 @@ class App(customtkinter.CTk):
             self.fig = plt.figure(constrained_layout=True, dpi=150) 
             self.canvas = FigureCanvasTkAgg(self.fig, master=self.tabview.tab("Show Plots"))
             self.canvas_widget = self.canvas.get_tk_widget()
-            self.canvas_widget.pack(fill="both", expand=True)
             self.toolbar = self.create_toolbar()
+            self.canvas_widget.pack(fill="both", expand=True)
             
             self.canvas.mpl_connect('pick_event', self.on_pick)
             self.canvas.mpl_connect("button_press_event", self.on_click)    # Choosing the axis by clicking on it
@@ -786,7 +785,7 @@ class App(customtkinter.CTk):
         if self.ent_legend.get("0.0","end-1c") == "":
             return
         
-        if self.legend is not None:
+        if self.legend is not None and not self.FFT_button.get():
             self.legend.remove()
 
         if self.ax2 is not None:    
@@ -861,16 +860,20 @@ class App(customtkinter.CTk):
         text_lines = self.get_textbox_lines(self.ent_legend)
   
         for index, y_data in enumerate(y_data_list):
-            if self.uselabels_button.get(): 
+            if self.uselabels_button.get() and index < len(text_lines): 
                 #self.ent_legend.get("0.0","end-1c")
-                if index >= len(text_lines): index = 0
+                print(index, len(text_lines))
+                if ax == "ax_second" and len(text_lines) > 1: index = 1
                 self.plot_kwargs["label"] = text_lines[index].format(name=self.optmenu.get()[self.legend_name], 
                                                                          ymax=np.max(y_data), 
                                                                          xmax=x_data[np.argmax(y_data)], 
                                                                          fwhm=find_fwhm(x_data,y_data)[-1], 
                                                                          res_x=x_data[1]-x_data[0])
+            else: self.plot_kwargs["label"] = None
 
+            ##### do the plot
             container = plot(x_data, moving_average(y_data, self.moving_average), xerr=xerr, yerr=yerr, capsize=3, **self.plot_kwargs)
+            #####
 
             if self.draw_FWHM_line.get():
                 x_min, x_max, y_value, fwhm= find_fwhm(x_data,y_data)
@@ -890,7 +893,7 @@ class App(customtkinter.CTk):
         axis.set_yscale('log' if self.plot_type in ["semilogy", "loglog"] else 'linear')
         axis.set_xscale('log' if self.plot_type in ["semilogx", "loglog"] else 'linear')
 
-        if self.uselabels_button.get() and ax != "ax_second": 
+        if self.uselabels_button.get(): 
             self.make_line_legend(axis)
 
         # create the fit
@@ -959,7 +962,16 @@ class App(customtkinter.CTk):
             image_data = f.read()
 
         # Convert to a NumPy array with np.frombuffer, Use io.BytesIO to simulate file opening and read it via matplotlib
-        self.data = plt.imread(io.BytesIO(np.frombuffer(image_data, np.uint8)))
+        # self.data = plt.imread(io.BytesIO(np.frombuffer(image_data, np.uint8)))
+        image = Image.open(io.BytesIO(image_data))
+
+        # Check if the image is 16-bit (mode 'I;16') or 8-bit (mode 'L' or 'RGB')
+        if image.mode in ('I;16', 'I'):
+            # 16-bit image, normalize by 65535
+            self.data = np.array(image).astype(np.float32) / 65535.0
+        else:
+            # 8-bit image, normalize by 255
+            self.data = np.array(image).astype(np.float32) / 255.0
 
         # if the image has color channels, make sure they have the right order, if all channels are the same, reduce it to one channel
         if len(self.data.shape) == 3:
@@ -992,8 +1004,12 @@ class App(customtkinter.CTk):
 
         # use axis labels and add a legend
         if self.uselabels_button.get() and (self.ent_legend.get("0.0","end-1c") != ""): 
-            legend_label = self.ent_legend.get("0.0","end-1c").format(name=self.optmenu.get()[self.legend_name])
-            self.ax1.legend(labels=[legend_label], handles=[self.ax1.plot([],[])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, fontsize=self.legend_font_size,fancybox=True,**self.legend_type)
+            text_lines = self.get_textbox_lines(self.ent_legend)
+            if text_lines[0] != "": 
+                # only take the first line as the label when doing lineout plots, otherwise take the whole entry
+                label_text = text_lines[0] if self.lineout_button.get() else self.ent_legend.get("0.0","end-1c")   
+                legend_label = label_text.format(name=self.optmenu.get()[self.legend_name])
+                self.ax1.legend(labels=[legend_label], handles=[self.ax1.plot([],[])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, fontsize=self.legend_font_size,fancybox=True,**self.legend_type)
 
         # use a scalebar on the bottom right corner
         if self.use_scalebar.get():
@@ -1453,14 +1469,13 @@ class App(customtkinter.CTk):
         self.line_entry.reinsert(0,str(int(self.line_slider.get())))
         
         self.ax_second = self.fig.add_subplot(1,2,2)
-        max_value = np.max(self.data)
 
         self.lineout_plot = self.make_line_plot("lineout_data", "ax_second")
         self.plot_axis_parameters("ax_second")
         self.ax_second.set_ylabel("")
 
-        self.asp = np.diff(self.ax_second.get_xlim())[0] / max_value*asp_image
-        logging.info(f"aspect = {self.asp}, max value = {max_value}, asp image={asp_image},  {self.x_lineout_min}, {self.x_lineout_max}, {self.y_lineout_min}, {self.y_lineout_max}")
+        self.asp = np.diff(self.ax_second.get_xlim())[0]*asp_image
+        logging.info(f"aspect = {self.asp}, asp image={asp_image},  {self.x_lineout_min}, {self.x_lineout_max}, {self.y_lineout_min}, {self.y_lineout_max}")
 
         self.update_lineout_aspect()
 
@@ -1489,6 +1504,12 @@ class App(customtkinter.CTk):
         self.line_entry.reinsert(0,str(int(self.line_slider.get())))
         self.angle_entry.reinsert(0,str(int(self.angle_slider.get())))
         
+        current_axis = self.choose_ax_button.get()
+        if self.angle_slider.get() in [-90, 90]: self.choose_ax_button.set(" x ")
+        if self.angle_slider.get() == 0:         self.choose_ax_button.set(" y ")
+        if current_axis != self.choose_ax_button.get():
+            self.initialize_lineout(self.choose_ax_button.get())
+
         (x1, y1), (x2, y2) = self.get_lineout_data()
 
         self.axline.set_data([x1, x2],[y1, y2])
@@ -1506,6 +1527,7 @@ class App(customtkinter.CTk):
     def update_lineout_aspect(self):
         self.ax_second.set_aspect(abs(self.asp)/(self.clim[1]-self.clim[0]))
         self.ax_second.set_ylim(self.clim)
+    
     #############################################################
     ############### Fouriertransformation #######################
     #############################################################
@@ -1564,13 +1586,10 @@ class App(customtkinter.CTk):
 
         self.FFT_data = self.Fourier_transform("data")
         self.FFT_plot = self.make_line_plot("FFT_data", "ax_second")
-        # self.FFT_plot, = self.ax_second.plot(self.FFT_data[:,0],self.FFT_data[:,1], **self.plot_kwargs)
 
         # Determine the width of the displayed FT window
         argmax = np.argmax(self.FFT_data[:,1])
         width = np.max(np.argwhere(self.FFT_data[:,1] > 1e-3*np.max(self.FFT_data[:,1]))) - argmax + int(0.01*len(self.FFT_data[:,1])/(self.padd_zeros_slider.get()+1))
-        # width = abs(np.argmax(self.FFT_data[:,1]) - np.argmin(abs(self.FFT_data[:,1]-0.5*np.max(self.FFT_data[:,1]))))
-        # self.ax_second.set_xlim(self.FFT_data[argmax-10*half_width,0], self.FFT_data[argmax+10*half_width,0])
         self.ax_second.set_xlim(self.FFT_data[argmax-width, 0], self.FFT_data[argmax+width, 0])
 
         self.canvas.draw()
@@ -1666,6 +1685,7 @@ class App(customtkinter.CTk):
         return toolbar_frame
     
     def toggle_toolbar(self, value):
+        if not self.initialize_plot_has_been_called: return
         if value == "Show Plots":
             self.toolbar.grid()
         else:
@@ -1681,8 +1701,8 @@ class App(customtkinter.CTk):
             self.canvas_widget.pack(expand=True, fill=None) 
             self.canvas_widget.config(width=self.fig.get_size_inches()[0] * self.fig.dpi, height=self.fig.get_size_inches()[1] * self.fig.dpi)
         else:
-            width = (self.tabview.winfo_width() - 12) / self.fig.dpi
-            height = (self.tabview.winfo_height() - 50) / self.fig.dpi
+            width = (self.tabview.winfo_width() - 18) / self.fig.dpi
+            height = (self.tabview.winfo_height() - 65) / self.fig.dpi
             self.fig.set_size_inches(w = width, h=height, forward=True)  # Re-enable dynamic resizing
             self.canvas_widget.pack(fill="both", expand=True) 
 
@@ -2372,7 +2392,7 @@ class CreateToolTip(object):
     """
     def __init__(self, widget, text='widget info'):
         self.waittime = 1000     #miliseconds
-        self.wraplength = 500   #pixels
+        self.wraplength = 300   #pixels
         self.widget = widget
         self.text = text
         self.widget.bind("<Enter>", self.enter)
@@ -2401,19 +2421,27 @@ class CreateToolTip(object):
 
     def showtip(self, event=None):
         x = y = 0
-
         bbox = self.widget.bbox("insert")
 
         if bbox:
             x, y, cx, cy = self.widget.bbox("insert")
+            # Adjust the tooltip width based on DPI scaling
+            wraplength = int(self.widget.winfo_fpixels(f'{self.wraplength}p'))
+            screen_width = self.widget.winfo_screenwidth()
+
             x += self.widget.winfo_rootx() + 0
             y += self.widget.winfo_rooty() + 40
+
+            if x + wraplength > screen_width:
+                x = screen_width - wraplength - 120  # Adjust position to avoid overflow
+
+            self.hidetip()
             # creates a toplevel window
             self.tw = customtkinter.CTkToplevel(self.widget, fg_color = ["#f9f9fa","#343638"]) #["#979da2","#565b5e"]
             # Leaves only the label and removes the app window
             self.tw.wm_overrideredirect(True)
             self.tw.wm_geometry("+%d+%d" % (x, y))
-            label = customtkinter.CTkLabel(self.tw, text=self.text + "\nPress F1 to deactivate tool tips", justify='left', wraplength = self.wraplength, fg_color = "transparent", padx=10, pady=5)
+            label = customtkinter.CTkLabel(self.tw, text=self.text + "\nPress F1 to deactivate tool tips", justify='left', wraplength = wraplength, fg_color = "transparent", padx=10, pady=5)
             label.pack()
         else: 
             logging.error("The cursor of the text widget is invisible and the bounding box cannot be determined")
