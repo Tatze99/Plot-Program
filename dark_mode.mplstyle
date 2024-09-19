@@ -1,0 +1,33 @@
+# Set black background default line colors to white.
+
+lines.color: white
+patch.edgecolor: white
+
+text.color: white
+
+axes.facecolor: white # (0.1294,0.1294,0.1294)
+axes.edgecolor: black # white
+axes.labelcolor: white
+axes.prop_cycle: cycler('color', ['8dd3c7', 'feffb3', 'bfbbd9', 'fa8174', '81b1d2', 'fdb462', 'b3de69', 'bc82bd', 'ccebc4', 'ffed6f'])
+
+xtick.color: black
+ytick.color: black
+
+xtick.labelcolor: white
+ytick.labelcolor: white
+
+grid.color: white
+
+figure.facecolor: (0.1294,0.1294,0.1294)
+figure.edgecolor: (0.1294,0.1294,0.1294)
+
+savefig.facecolor: white
+savefig.edgecolor: white
+savefig.text.color: black
+
+### Boxplots
+boxplot.boxprops.color: white
+boxplot.capprops.color: white
+boxplot.flierprops.color: white
+boxplot.flierprops.markeredgecolor: white
+boxplot.whiskerprops.color: white

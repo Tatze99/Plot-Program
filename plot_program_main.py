@@ -38,7 +38,9 @@ def toggle_bool(event=None):
     tooltips_enabled = not tooltips_enabled
 
 version_number = "24/08"
+Standard_path = os.path.dirname(os.path.abspath(__file__))
 plt.style.use('default')
+# plt.style.use(os.path.join(Standard_path, "dark_mode.mplstyle"))
 matplotlib.rc('font', family='serif')
 matplotlib.rc('font', serif='Times New Roman')
 file_type_names = ('.csv', '.dat', '.txt', '.png', '.jpg', '.jpeg', '.spec', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm', '.lvm')
@@ -47,10 +49,9 @@ sequential_colormaps = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis',
 
 ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
-Standard_path = os.path.dirname(os.path.abspath(__file__))
 filelist = natsorted([fname for fname in os.listdir(Standard_path) if fname.endswith(file_type_names)])
 
-def exponential(x, a, b, c):
+def exponential(x, a, b, c): 
     return a * np.exp(b * x) + c
 
 def lorentz(x, a, w0, gamma, d):
@@ -611,8 +612,23 @@ class App(customtkinter.CTk):
         else:
             self.image_plot = False
         
-        if self.fit_button.get() and self.image_plot and not self.lineout_button.get(): self.fit_button.toggle()
-        if self.lineout_button.get() and not self.image_plot: self.lineout_button.toggle()
+        # if self.image_plot != self.image_plot_prev and self.multiplot_button.get() and self.rows ==1 and self.cols == 1:
+        #     self.initialize()
+        #     return
+
+        if self.image_plot: 
+            if self.FFT_button.get(): self.FFT_button.toggle()
+            self.lineout_button.configure(state="enabled")
+            self.FFT_button.configure(state="disabled")
+            if self.lineout_button.get():
+                if self.fit_button.get(): self.fit_button.toggle()
+                self.fit_button.configure(state="enabled")
+            else: self.fit_button.configure(state="disabled")
+        else:
+            if self.lineout_button.get(): self.lineout_button.toggle()
+            self.lineout_button.configure(state="disabled")
+            self.FFT_button.configure(state="enabled")
+            self.fit_button.configure(state="enabled")
         if not self.multiplot_button.get() and self.ax1 is not None: self.ax1.remove()   # reset the plot for normalize but use it normally in multiplot
 
         # multiplots but in several subplots
@@ -862,7 +878,6 @@ class App(customtkinter.CTk):
         for index, y_data in enumerate(y_data_list):
             if self.uselabels_button.get() and index < len(text_lines): 
                 #self.ent_legend.get("0.0","end-1c")
-                print(index, len(text_lines))
                 if ax == "ax_second" and len(text_lines) > 1: index = 1
                 self.plot_kwargs["label"] = text_lines[index].format(name=self.optmenu.get()[self.legend_name], 
                                                                          ymax=np.max(y_data), 
@@ -950,8 +965,8 @@ class App(customtkinter.CTk):
 
     def make_image_plot(self, file_path):
         # used in a onegraph multiplot when we change to an image
-        if self.image_plot != self.image_plot_prev and (self.rows == 1 and self.cols == 1) and self.replot:
-            return
+        # if self.image_plot != self.image_plot_prev and (self.rows == 1 and self.cols == 1) and self.replot:
+        #     return
 
         # hide all column entries
         for entry in self.column_dict:
@@ -1180,7 +1195,7 @@ class App(customtkinter.CTk):
 
             (self.ax1, self.ax2) = self.ax_container[-1]
         
-        elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter > 2):
+        elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter > 1):
             
             # remove the line and possible caps and error-bar lines
             self.plot_container[-1][0].set_label("")
@@ -1197,6 +1212,10 @@ class App(customtkinter.CTk):
             colors = plt.get_cmap(self.cmap).colors
             n = (self.plot_counter-1) % len(colors)
             self.ax1.set_prop_cycle(cycler(color=colors[n:]+ colors[:n]))
+            if n==0:  # needed to handle normalize correctly, when one plot is visible, and normalized is pressed, the plot has to be redrawn
+                self.ax1.clear()
+                self.ax1.set_xticks([])
+                self.ax1.set_yticks([])
             if self.uselabels_button.get(): 
                 self.make_line_legend(self.ax1)
 
@@ -1649,8 +1668,16 @@ class App(customtkinter.CTk):
             self.ylim_slider.configure(from_=self.ymin-(self.ymax-self.ymin)*0.2, to=self.ymax+(self.ymax-self.ymin)*0.2)      
 
     def normalize_setup(self):
-        if not self.normalize_button.get():
-            self.clim = (0,1)
+        if self.normalize_button.get():
+            self.normalize()
+        else: self.clim = (0,1)
+
+        if self.image_plot: 
+            self.image.set_clim(self.clim)
+        else:
+            self.control_z()
+            self.plot()
+        self.canvas.draw()
 
     def normalize(self):
         if self.image_plot:
@@ -1691,22 +1718,6 @@ class App(customtkinter.CTk):
         else:
             self.toolbar.grid_remove()
 
-    def update_canvas_size(self):
-        self.canvas_widget.pack_forget()
-
-        if self.canvas_ratio is not None:
-            width = self.canvas_width/2.54
-            height = self.canvas_height/2.54 if self.canvas_ratio == 0 else self.canvas_width/(self.canvas_ratio*2.54)
-            self.fig.set_size_inches(width, height)
-            self.canvas_widget.pack(expand=True, fill=None) 
-            self.canvas_widget.config(width=self.fig.get_size_inches()[0] * self.fig.dpi, height=self.fig.get_size_inches()[1] * self.fig.dpi)
-        else:
-            width = (self.tabview.winfo_width() - 18) / self.fig.dpi
-            height = (self.tabview.winfo_height() - 65) / self.fig.dpi
-            self.fig.set_size_inches(w = width, h=height, forward=True)  # Re-enable dynamic resizing
-            self.canvas_widget.pack(fill="both", expand=True) 
-
-        self.canvas.draw()  # Redraw canvas to apply the automatic size
     # Check if there are any non-number characters in the file and skip these lines
     def skip_rows(self, file_path):
         skiprows = 0
@@ -1901,7 +1912,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         App.create_label(self, column=1, row=10, columnspan=2, text="Line plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
 
         # general values 
-        self.canvas_ratio_list   = App.create_Menu(self, column=1, row=1, width=110, values=list(self.canvas_ratio.keys()), text="Canvas Size", command=self.apply_settings)
+        self.canvas_ratio_list   = App.create_Menu(self, column=1, row=1, width=110, values=list(self.canvas_ratio.keys()), text="Canvas Size", command=lambda x: self.update_canvas_size(self.canvas_ratio[x]))
         self.canvas_width        = App.create_entry(self,column=2, row=1, width=70, placeholder_text="10 [cm]", sticky='w', init_val=self.app.canvas_width)
         self.canvas_height       = App.create_entry(self,column=3, row=1, width=70, placeholder_text="10 [cm]", sticky='w', init_val=self.app.canvas_height, columnspan=2)
         self.ticks_settings_list = App.create_Menu(self, column=1, row=2, width=110, values=self.ticks_settings, text="Ticks, Label settings", command=self.apply_settings, init_val=self.app.ticks_settings)
@@ -1941,6 +1952,9 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.show_FWHM_button       = App.create_switch(self, column=4, row=12, text="Draw FWHM line", command=lambda: self.toggle_boolean(self.app.draw_FWHM_line))
         self.grid_lines_button      = App.create_switch(self, column=4, row=13, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
         
+        self.canvas_width.bind("<KeyRelease>", lambda event: (self.apply_settings(None), self.update_canvas_size(self.app.canvas_ratio)))
+        self.canvas_height.bind("<KeyRelease>", lambda event: (self.apply_settings(None), self.update_canvas_size(self.app.canvas_ratio)))
+
         self.cmap_length_list.configure(state="disabled")
         self.single_colors_list.grid_remove()
         self.canvas_height.grid_remove()
@@ -2068,7 +2082,6 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app.cmap_imshow=self.cmap_imshow_list.get()
         self.app.clim=tuple(self.clim_slider.get())
 
-        self.app.canvas_ratio=self.canvas_ratio[self.canvas_ratio_list.get()]
         self.app.label_settings = self.label_settings_list.get()
         self.app.ticks_settings = self.ticks_settings_list.get()
         self.app.linestyle=self.linestyle[self.linestyle_list.get()]
@@ -2083,17 +2096,10 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app.single_color = self.single_colors[self.single_colors_list.get()]
         self.app.normalize_function = self.normalize_list.get()
 
-        self.app.update_canvas_size()
-
         if self.cmap_list.get() in sequential_colormaps:
             self.cmap_length_list.configure(state="enabled")
         else: 
             self.cmap_length_list.configure(state="disabled")
-
-        if self.app.canvas_ratio == 0:
-            self.canvas_height.grid()
-        else:
-            self.canvas_height.grid_remove()
 
         if self.cmap_list.get() == 'CUSTOM':
             self.cmap_length_list.grid_remove()
@@ -2111,6 +2117,26 @@ class SettingsWindow(customtkinter.CTkToplevel):
     def toggle_boolean(self, boolean):
         boolean.set(not boolean.get())
 
+    def update_canvas_size(self, canvas_ratio):
+        if self.app.canvas_width <= 2 or self.app.canvas_height <= 2: return
+        self.app.canvas_ratio = canvas_ratio
+        self.app.canvas_widget.pack_forget()
+
+        self.canvas_height.grid() if self.app.canvas_ratio == 0 else self.canvas_height.grid_remove()
+
+        if self.app.canvas_ratio is not None:
+            width = self.app.canvas_width/2.54
+            height = self.app.canvas_height/2.54 if self.app.canvas_ratio == 0 else self.app.canvas_width/(self.app.canvas_ratio*2.54)
+            self.app.fig.set_size_inches(width, height)
+            self.app.canvas_widget.pack(expand=True, fill=None) 
+            self.app.canvas_widget.config(width=self.app.fig.get_size_inches()[0] * self.app.fig.dpi, height=self.app.fig.get_size_inches()[1] * self.app.fig.dpi)
+        else:
+            width = (self.app.tabview.winfo_width() - 18) / self.app.fig.dpi
+            height = (self.app.tabview.winfo_height()) / self.app.fig.dpi
+            self.app.fig.set_size_inches(w=width, h=height, forward=True)  # Re-enable dynamic resizing
+            self.app.canvas_widget.pack(fill="both", expand=True) 
+
+        self.app.canvas.draw()  # Redraw canvas to apply the automatic size
 
 """
 ############################################################################################
