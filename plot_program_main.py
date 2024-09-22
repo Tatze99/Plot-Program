@@ -629,7 +629,6 @@ class App(customtkinter.CTk):
             self.lineout_button.configure(state="disabled")
             self.FFT_button.configure(state="enabled")
             self.fit_button.configure(state="enabled")
-        if not self.multiplot_button.get() and self.ax1 is not None: self.ax1.remove()   # reset the plot for normalize but use it normally in multiplot
 
         # multiplots but in several subplots
         if self.replot and (self.rows != 1 or self.cols != 1):
@@ -648,7 +647,6 @@ class App(customtkinter.CTk):
                     self.ax_container.append((ax1, None)) # Add primary axis with no twin yet
                 self.ax1 = ax1
                 self.ax2 = None
-                self.ax1.set_prop_cycle(cycler(color=self.get_colormap(self.cmap)))
                 self.sub_plot_counter = 1
                 self.first_ax2 = True
                 self.two_axis_button.deselect()
@@ -657,11 +655,10 @@ class App(customtkinter.CTk):
                 self.plot_counter -= 1
                 self.sub_plot_counter += 1
         # single plot or multiplot but same axis, no image plot!
-        elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter == 1) or not self.replot:
+        elif ((self.replot and (self.rows == 1 and self.cols == 1)) or not self.replot) and self.ax_container == []:
             ax1 = self.fig.add_subplot(1,1,1)
             self.ax_container.append((ax1, None)) # Add primary axis with no twin yet
             self.ax1 = ax1
-            self.ax1.set_prop_cycle(cycler(color=self.get_colormap(self.cmap)))
             self.plot_container = []
             self.plot_order = []
             self.ent_subplot.configure(state='disabled')
@@ -670,6 +667,12 @@ class App(customtkinter.CTk):
         if self.image_plot: 
             self.make_image_plot(file_path)
         else:
+            colors = self.get_colormap(self.cmap)
+            if (self.rows ==1 and self.cols==1):
+                n = (self.plot_counter-1) % len(colors)  
+            else:
+                n = self.sub_plot_counter - 1
+            self.ax1.set_prop_cycle(cycler(color=colors[n:]+ colors[:n]))
             self.data = self.load_plot_data(file_path)
             line_container = self.make_line_plot("data", "ax1")
             
@@ -850,7 +853,6 @@ class App(customtkinter.CTk):
         
         data = getattr(self,dat)
         axis = getattr(self,ax)
-        axis.tick_params(which='both', direction='in')
         
         # hide unused column entries
         self.hide_column_entries(data)
@@ -905,6 +907,8 @@ class App(customtkinter.CTk):
             self.plot_order.append(ax)
             self.plot_counter += 1
 
+
+        axis.tick_params(which='both', direction='in')
         axis.set_yscale('log' if self.plot_type in ["semilogy", "loglog"] else 'linear')
         axis.set_xscale('log' if self.plot_type in ["semilogx", "loglog"] else 'linear')
 
@@ -1195,8 +1199,7 @@ class App(customtkinter.CTk):
 
             (self.ax1, self.ax2) = self.ax_container[-1]
         
-        elif (self.replot and (self.rows == 1 and self.cols == 1) and self.plot_counter > 1):
-            
+        elif ((self.rows == 1 and self.cols == 1) and self.plot_counter > 1):
             # remove the line and possible caps and error-bar lines
             self.plot_container[-1][0].set_label("")
             for item in list(flatten(self.plot_container[-1])):
@@ -1209,10 +1212,8 @@ class App(customtkinter.CTk):
 
             # ensure that the color is setback to its previous state by shifting the colormap by the value n determined by the current plot counter and resetting the prop_cycle
             self.plot_counter -= 1
-            colors = plt.get_cmap(self.cmap).colors
-            n = (self.plot_counter-1) % len(colors)
-            self.ax1.set_prop_cycle(cycler(color=colors[n:]+ colors[:n]))
-            if n==0:  # needed to handle normalize correctly, when one plot is visible, and normalized is pressed, the plot has to be redrawn
+
+            if self.plot_counter == 1:  # needed to handle normalize correctly, when one plot is visible, and normalized is pressed, the plot has to be redrawn
                 self.ax1.clear()
                 self.ax1.set_xticks([])
                 self.ax1.set_yticks([])
