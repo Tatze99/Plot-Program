@@ -277,6 +277,7 @@ class App(customtkinter.CTk):
         self.markers=''
         self.cmap="tab10"
         self.linewidth=1
+        self.alpha = 1
         self.moving_average = 1
         self.use_grid_lines = customtkinter.BooleanVar(value=False)
         self.use_minor_ticks = customtkinter.BooleanVar(value=False)
@@ -611,10 +612,6 @@ class App(customtkinter.CTk):
             self.image_plot = True 
         else:
             self.image_plot = False
-        
-        # if self.image_plot != self.image_plot_prev and self.multiplot_button.get() and self.rows ==1 and self.cols == 1:
-        #     self.initialize()
-        #     return
 
         if self.image_plot: 
             if self.FFT_button.get(): self.FFT_button.toggle()
@@ -754,6 +751,11 @@ class App(customtkinter.CTk):
             if first_col or self.label_settings == "default" or self.mid_axis_button.get(): 
                 axis.set_ylabel(self.ent_ylabel.get())
 
+        if self.fit_button.get():
+            if self.display_fit_params_in_plot.get():
+                self.fit_params_box.set_visible(True)
+            else: self.fit_params_box.set_visible(False)
+
         if self.mid_axis_button.get():
             axis.spines[['top', 'right']].set_visible(False)
             axis.spines[['left', 'bottom']].set_position('zero')
@@ -861,7 +863,8 @@ class App(customtkinter.CTk):
         self.plot_kwargs = dict(
             linestyle = self.linestyle,
             marker = self.markers,
-            linewidth = self.linewidth
+            linewidth = self.linewidth,
+            alpha = self.alpha
             )
 
         if self.normalize_button.get(): self.normalize()
@@ -892,17 +895,18 @@ class App(customtkinter.CTk):
             container = plot(x_data, moving_average(y_data, self.moving_average), xerr=xerr, yerr=yerr, capsize=3, **self.plot_kwargs)
             #####
 
+            FWHM_line = ()
+            fill = ()
+
             if self.draw_FWHM_line.get():
-                x_min, x_max, y_value, fwhm= find_fwhm(x_data,y_data)
+                x_min, x_max, y_value, _= find_fwhm(x_data,y_data)
                 FWHM_line, = axis.plot([x_min,x_max], [y_value, y_value], color="black")
-            else: 
-                FWHM_line = ()
+                
             if yerr is not None and self.yerror_area_button.get(): 
                 fill = axis.fill_between(data[:,0], moving_average(y_data-yerr, self.moving_average), moving_average(y_data+yerr, self.moving_average), alpha=0.1)
                 for item in list(flatten(container[1])): item.remove()
                 for item in list(flatten(container[2])): item.remove()
-            else: 
-                fill = ()
+                
             self.plot_container.append((container,fill, FWHM_line))
             self.plot_order.append(ax)
             self.plot_counter += 1
@@ -964,8 +968,7 @@ class App(customtkinter.CTk):
 
         self.fit_lineout, = axis.plot(data[minimum:maximum, 0], self.fit_plot(self.function, self.params, data[minimum:maximum,:]), **self.plot_kwargs_fit)
 
-        if self.display_fit_params_in_plot.get():
-            axis.text(0.05, 0.9, FitWindow.get_fitted_labels(self.fit_window), ha='left', va='top', transform=axis.transAxes, bbox=dict(facecolor='none', edgecolor='black', boxstyle='round,pad=0.6'), size=8)
+        self.fit_params_box = axis.text(0.05, 0.9, FitWindow.get_fitted_labels(self.fit_window), color="black", ha='left', va='top', transform=axis.transAxes, bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.6', alpha=0.8), size=8)
 
     def make_image_plot(self, file_path):
         # used in a onegraph multiplot when we change to an image
@@ -1037,15 +1040,14 @@ class App(customtkinter.CTk):
         
         # use a colorbar
         if self.use_colorbar.get():
-            self.cbar = self.fig.colorbar(self.image, location="top", pad=0.01)
+            self.cbar = self.fig.colorbar(self.image, pad=0.01)
 
         self.plot_axis_parameters("ax1", plot_counter = self.plot_index)
         
     def update_plot(self, val):
-        if self.uselims_button.get() == 1: 
-            
-            ax = self.ax2 if self.two_axis_button.get() else self.ax1
+        ax = self.ax2 if self.two_axis_button.get() else self.ax1
 
+        if self.uselims_button.get() == 1: 
             self.update_slider_limits()
             self.x_l, self.x_r = self.xlim_slider.get()
             self.y_l, self.y_r = self.ylim_slider.get()
@@ -1090,7 +1092,19 @@ class App(customtkinter.CTk):
                     self.create_fit_border_lines("ax_second")
                 else:
                     self.create_fit_border_lines("ax1")
-            
+        
+        if not self.image_plot:
+            for i, line in enumerate(list(flatten(self.plot_container[-1][0]))):
+                
+                if line: 
+                    line.set_alpha(self.alpha)
+                    line.set_linewidth(self.linewidth)
+
+                    if i == 0:  # line plot
+                        line.set_linestyle(self.linestyle)
+                    if i in [1,2]: # error caps
+                        line.set_markeredgewidth(self.linewidth)
+
         self.canvas.draw()
     
     def load_plot_data(self, file_path):
@@ -1883,7 +1897,7 @@ class App(customtkinter.CTk):
 class SettingsWindow(customtkinter.CTkToplevel): 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.geometry("600x700")
+        self.geometry("600x730")
         self.title("Plot Settings")
         self.app = app
 
@@ -1941,17 +1955,19 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.moving_av_list     = App.create_Menu(self, column=1, row=16, columnspan=2, values=self.moving_average, text="Average", command=self.apply_settings, init_val=self.app.moving_average)
         self.linewidth_slider   = App.create_slider(    self, column=1, row=17, columnspan=2, from_=0.1, to=2, width=155,
                                                     command= lambda value, var="lw_var": self.update_slider_value(value, var), text="line width", number_of_steps=19, init_val=self.app.linewidth)
+        self.alpha_slider       = App.create_slider(    self, column=1, row=18, columnspan=2, from_=0, to=1, width=155,
+                                                    command= lambda value, var="alpha_var": self.update_slider_value(value, var), text="line alpha", number_of_steps=20, init_val=self.app.alpha)
 
         self.reset_button           = App.create_button(self, column=4, row=0, text="Reset Settings",   command=self.reset_values, width=130, pady=(20,5))
-        self.minor_ticks_button     = App.create_switch(self, column=4, row=2, text="Use Minor Ticks",  command=lambda: self.toggle_boolean(self.app.use_minor_ticks))
+        self.minor_ticks_button     = App.create_switch(self, column=4, row=2, text="Use Minor Ticks",  command=lambda: (self.toggle_boolean(self.app.use_minor_ticks),self.apply_settings(None)))
         self.convert_pixels_button  = App.create_switch(self, column=4, row=5, text="Convert Pixels",   command=lambda: self.toggle_boolean(self.app.convert_pixels))
         self.scale_switch_button    = App.create_switch(self, column=4, row=6, text="Use Scalebar",     command=lambda: self.toggle_boolean(self.app.use_scalebar))
         self.cbar_switch_button     = App.create_switch(self, column=4, row=7, text="Use Colorbar",     command=lambda: self.toggle_boolean(self.app.use_colorbar))
         self.convert_rgb_button     = App.create_switch(self, column=4, row=8, text="Convert RGB to gray",command=lambda: self.toggle_boolean(self.app.convert_rgb_to_gray))
         self.save_plain_img_button  = App.create_switch(self, column=4, row=9, text="Save plain images",command=lambda: self.toggle_boolean(self.app.save_plain_image))
-        self.hide_params_button     = App.create_switch(self, column=4, row=11, text="Hide fit params",  command=lambda: self.toggle_boolean(self.app.display_fit_params_in_plot))
+        self.hide_params_button     = App.create_switch(self, column=4, row=11, text="Hide fit params",  command=lambda: (self.toggle_boolean(self.app.display_fit_params_in_plot), self.apply_settings(None)))
         self.show_FWHM_button       = App.create_switch(self, column=4, row=12, text="Draw FWHM line", command=lambda: self.toggle_boolean(self.app.draw_FWHM_line))
-        self.grid_lines_button      = App.create_switch(self, column=4, row=13, text="Use Grid",         command=lambda: self.toggle_boolean(self.app.use_grid_lines))
+        self.grid_lines_button      = App.create_switch(self, column=4, row=13, text="Use Grid",         command=lambda: (self.toggle_boolean(self.app.use_grid_lines), self.apply_settings(None)))
         
         self.canvas_width.bind("<KeyRelease>", lambda event: (self.apply_settings(None), self.update_canvas_size(self.app.canvas_ratio)))
         self.canvas_height.bind("<KeyRelease>", lambda event: (self.apply_settings(None), self.update_canvas_size(self.app.canvas_ratio)))
@@ -1991,8 +2007,10 @@ class SettingsWindow(customtkinter.CTkToplevel):
         # Slider labels    
         self.pixel_range_var = customtkinter.StringVar()  # StringVar to hold the label value
         self.lw_var = customtkinter.StringVar()  # StringVar to hold the label value
+        self.alpha_var = customtkinter.StringVar()  # StringVar to hold the label value
         App.create_label(self, textvariable=self.pixel_range_var, column=2, row=9, width=30, anchor='e', sticky='e')
         App.create_label(self, textvariable=self.lw_var, column=2, row=17, width=30, anchor='e', sticky='e')
+        App.create_label(self, textvariable=self.alpha_var, column=2, row=18, width=30, anchor='e', sticky='e')
         self.grid_columnconfigure(3, minsize=30)
         
         self.canvas_width.bind("<KeyRelease>", self.apply_settings)
@@ -2014,6 +2032,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.single_colors_list.set(list(self.single_colors.keys())[list(self.single_colors.values()).index(self.app.single_color)])
         self.update_rangeslider_value(list(self.app.clim), "pixel_range_var")
         self.update_slider_value(self.app.linewidth, "lw_var")
+        self.update_slider_value(self.app.alpha, "alpha_var")
 
         if self.app.use_scalebar.get(): self.scale_switch_button.select()
         if self.app.use_colorbar.get(): self.cbar_switch_button.select()
@@ -2056,8 +2075,10 @@ class SettingsWindow(customtkinter.CTkToplevel):
 
         self.clim_slider.set([0,1])
         self.linewidth_slider.set(1) # before next line!
+        self.alpha_slider.set(1) # before next line!
         self.update_rangeslider_value((0,1), "pixel_range_var")
         self.update_slider_value(1, "lw_var")
+        self.update_slider_value(1, "alpha_var")
           
     def update_slider_value(self, value, var_name):
         variable = getattr(self, var_name)
@@ -2089,6 +2110,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.app.markers=self.markers[self.marker_list.get()]
         self.app.cmap=self.cmap_list.get()
         self.app.linewidth=self.linewidth_slider.get()
+        self.app.alpha=self.alpha_slider.get()
         self.app.moving_average = int(self.moving_av_list.get())
         self.app.grid_ticks = self.grid_lines_list.get()
         self.app.grid_axis = self.grid_axis_list.get()
@@ -2114,6 +2136,9 @@ class SettingsWindow(customtkinter.CTkToplevel):
             if self.app.lineout_button.get():
                 self.app.update_lineout_aspect()
             self.app.canvas.draw()
+        
+        self.app.plot_axis_parameters("ax1")
+        self.app.update_plot(None)
 
     def toggle_boolean(self, boolean):
         boolean.set(not boolean.get())
