@@ -700,7 +700,8 @@ class App(customtkinter.CTk):
                 colormap = ListedColormap(colormap(np.linspace(0.9, 0, self.cmap_length)))
             else:
                 colormap = ListedColormap(colormap(np.linspace(0, 1, self.cmap_length)))
-    
+            colormap.colors = tuple(map(tuple, colormap.colors))
+
         return colormap.colors
         
     # set the axis labels, ticks, grid, middle axis line
@@ -1129,6 +1130,7 @@ class App(customtkinter.CTk):
 
                 # Load the data, applying the converter to all columns
                 data = np.genfromtxt(file_path, skip_header=skip_rows, delimiter=delimiter, converters={i: comma_to_dot for i in range(maxcolumns)})
+                data = data[:, ~np.isnan(data).all(axis=0)]
             except: 
                 data = np.loadtxt(file_path)
                 logging.error("np.genfromtxt was not succesfull, fallback to np.loadtxt")
@@ -2533,7 +2535,7 @@ class CustomEntry(customtkinter.CTkEntry):
         self.insert(index, text)  # Insert the new text
 
 if __name__ == "__main__":
-    level = logging.WARNING
+    level = logging.INFO
     fmt = '[%(levelname)s] %(asctime)s - %(message)s'
     logging.basicConfig(level=level, format=fmt)
 
