@@ -258,7 +258,7 @@ class App(customtkinter.CTk):
         self.ax1 = None
         self.ax2 = None
         self.plot_counter = 1
-        self.plot_index = 1
+        self.plot_index = 0
         self.color = "#212121" # toolbar
         self.text_color = "white"
         self.reset_plots = True
@@ -271,6 +271,7 @@ class App(customtkinter.CTk):
         self.ticks_settings = "smart"
         self.multiplot_row = 9
         self.legend_font_size = 10
+        self.initialize_plot_has_been_called = False
 
         # line plot settings
         self.linestyle='-'
@@ -435,6 +436,7 @@ class App(customtkinter.CTk):
 
         self.load_labels()
         self.load_multiplot()
+        self.load_limits()
         self.load_lineout()
         self.load_fourier_trafo()
 
@@ -570,17 +572,20 @@ class App(customtkinter.CTk):
         self.ax2 = None
         self.ax1 = None
         self.first_ax2 = True 
-        self.plot_counter = 1      # counts how many plots there are
-        self.plot_index = 1        # index of the currently used plot
+        self.plot_counter = 1      # counts how many plot-lines there are (counts all lines of all subplots) 
+        self.plot_index = 0        # index of the currently used (sub)plot
         self.sub_plot_counter = 1  # number of subplots
         self.mouse_clicked_on_canvas = False
-            
-        self.ax_container = []
-        self.legend = None
             
         if self.replot and not self.lineout_button.get() and not self.FFT_button.get():
             self.rows=float(self.ent_rows.get())
             self.cols=float(self.ent_cols.get())
+        
+        self.ax_container = []         # list of tuples containing (ax1,ax2) for every subplot
+        self.multiplot_container = []  # list containing the "self.plot_container" for every previous subplot
+        self.legend_container = [None] * int(self.rows * self.cols)
+        self.plot_container = None     # plot container for current subplot: contains all lines ((x,y), fill, FWHM)
+        self.legend = None
 
         self.ymax = float('-inf')
         self.ymin = float('inf')
@@ -633,8 +638,9 @@ class App(customtkinter.CTk):
             if self.sub_plot_counter >= self.sub_plot_value or self.plot_counter == 1:
                 if self.plot_counter > self.rows*self.cols: return
                 ax1 = self.fig.add_subplot(int(self.rows),int(self.cols),self.plot_counter)
-                self.plot_container = []
-                self.plot_order = []
+                if self.plot_container != None: self.multiplot_container.append(self.plot_container)
+                self.plot_container = [] 
+                self.plot_order = []        # keeps track of the order the plots are created (one may switch between ax1 and ax2), needed for referencing
                 self.legend = None
                 if self.mouse_clicked_on_canvas:
                     self.ax1.remove()
@@ -647,11 +653,12 @@ class App(customtkinter.CTk):
                 self.sub_plot_counter = 1
                 self.first_ax2 = True
                 self.two_axis_button.deselect()
-                self.plot_index = self.plot_counter
+                self.plot_index = self.plot_counter-1
             else: 
                 self.plot_counter -= 1
                 self.sub_plot_counter += 1
-        # single plot or multiplot but same axis, no image plot!
+
+        # single plot or multiplot but same axis
         elif ((self.replot and (self.rows == 1 and self.cols == 1)) or not self.replot) and self.ax_container == []:
             ax1 = self.fig.add_subplot(1,1,1)
             self.ax_container.append((ax1, None)) # Add primary axis with no twin yet
@@ -708,8 +715,8 @@ class App(customtkinter.CTk):
     def plot_axis_parameters(self, ax, plot_counter=1):
         axis = getattr(self, ax)
 
-        last_row = plot_counter > self.cols*(self.rows-1)
-        first_col = (plot_counter-1) % self.cols == 0
+        last_row = plot_counter >= self.cols*(self.rows-1)
+        first_col = plot_counter % self.cols == 0
         # put the second axis on the right side of the plot
         if ax == "ax2":
             first_col = (plot_counter+self.cols) % self.cols == 0
@@ -803,11 +810,14 @@ class App(customtkinter.CTk):
         return x_data, y_data_list, x_error, y_error 
 
     # Make the legend for line plots
-    def make_line_legend(self, axis):
+    def make_line_legend(self, axis, remove=True, container=None):
+        if container is None:
+            container = self.plot_container
+
         if self.ent_legend.get("0.0","end-1c") == "":
             return
         
-        if self.legend is not None and not self.FFT_button.get():
+        if self.legend is not None and remove == True and not self.FFT_button.get():
             self.legend.remove()
 
         if self.ax2 is not None:    
@@ -829,12 +839,14 @@ class App(customtkinter.CTk):
             self.legend = axis.legend(handles, labels, fontsize=self.legend_font_size, fancybox=True, **self.legend_type)
         
         self.map_legend_to_ax = {}  # Will map legend lines to original lines.
-        for legend_line, ax_line in zip(self.legend.legend_handles, [x for x in self.plot_container]):
+        for legend_line, ax_line in zip(self.legend.legend_handles, [x for x in container]):
             legend_line.set_picker(5)  # Enable picking on the legend line.
             self.map_legend_to_ax[legend_line] = ax_line
+        
+        return self.map_legend_to_ax
 
     def make_line_plot(self, dat, ax):
-
+        print(self.plot_counter)
         if self.multiplot_button.get():
                 if self.two_axis_button.get():
                     if self.first_ax2:
@@ -918,7 +930,9 @@ class App(customtkinter.CTk):
         axis.set_xscale('log' if self.plot_type in ["semilogx", "loglog"] else 'linear')
 
         if self.uselabels_button.get(): 
-            self.make_line_legend(axis)
+            logging.info(f"Only important for multiplot. The current index of the subplot is: {self.plot_index}")
+            self.legend_container[self.plot_index] = self.make_line_legend(axis)
+
 
         # create the fit
         if self.use_fit == 1 and not(self.FFT_button.get() and ax=="ax1") and (not self.image_plot or self.fit_button.get()):
@@ -1043,7 +1057,7 @@ class App(customtkinter.CTk):
         if self.use_colorbar.get():
             self.cbar = self.fig.colorbar(self.image, pad=0.01)
 
-        self.plot_axis_parameters("ax1", plot_counter = self.plot_index)
+        self.plot_axis_parameters("ax1", plot_counter = self.plot_index+1)
         
     def update_plot(self, val):
         ax = self.ax2 if self.two_axis_button.get() else self.ax1
@@ -1234,7 +1248,7 @@ class App(customtkinter.CTk):
                 self.ax1.set_xticks([])
                 self.ax1.set_yticks([])
             if self.uselabels_button.get(): 
-                self.make_line_legend(self.ax1)
+                self.legend_container[self.plot_index] = self.make_line_legend(self.ax1)
 
         self.canvas.draw()
 
@@ -1256,62 +1270,63 @@ class App(customtkinter.CTk):
         array_2d = np.array(rows)
         return array_2d
 
-    """
     ############################################################################################
     ##############################    Settings Frame     #######################################
     ############################################################################################
-    """
+
+    def load_limits(self):
+        row = 4 # 4 from the use_labels
+        self.limits_title = App.create_label(self.settings_frame, text="Limits", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.labx = App.create_label(self.settings_frame, text="x limit", column=0, row=row+1)
+        self.laby = App.create_label(self.settings_frame, text="y limit", column=0, row=row+2)
+
+        xlim_min, xlim_max, ylim_min, ylim_max = (0,1,0,1)
+
+        for i, (lim_lbox, lim_rbox, lim_min, lim_max, lim_slider) in enumerate(zip(["xlim_lbox", "ylim_lbox"], # lim_box - entries
+                                                                ["xlim_rbox", "ylim_rbox"],
+                                                                ["xlim_min", "ylim_min"],
+                                                                ["xlim_max", "ylim_max"],
+                                                                ["xlim_slider", "ylim_slider"])): # lim_slider - slider 
+            value_min = locals()[lim_min]
+            value_max = locals()[lim_max]
+
+            # create the entry objects "self.xlim_lbox" ...
+            setattr(self, lim_lbox, App.create_entry(self.settings_frame, row=row+i+1, column=1, width=50))
+            setattr(self, lim_rbox, App.create_entry(self.settings_frame, row=row+i+1, column=4, width=50))
+            setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=value_min, to=value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), columnspan=2, init_value=[value_min, value_max]))
+
+            # get the name of the created object, first the entry, second the slider
+            entryl_widget = getattr(self,lim_lbox)
+            entryr_widget = getattr(self,lim_rbox)
+            slider_widget = getattr(self,lim_slider)
+
+            #set the properties of the entry object, key release event, set the value to the slider and update the limits,
+            # slider_widget = slider_widget is necessary to force the lambda function to capture the current value of slider_widget instead of calling it, when the key is pressed, otherwise slider_widget = ylim_r is used!
+            entryl_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: (slider_widget.set([float(val1.get()), float(val2.get())]), self.update_plot(val1)))
+            entryr_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: (slider_widget.set([float(val1.get()), float(val2.get())]), self.update_plot(val2)))
+            # insert the limits into the entry with 4 decimals
+            entryl_widget.insert(0,str(round(value_min,4-len(str(int(value_min))))))
+            entryr_widget.insert(0,str(round(value_max,4-len(str(int(value_max))))))
+        
+        self.use_limits()
 
     def use_limits(self):
-        if not self.initialize_plot_has_been_called: return
+        widget_names = ["xlim_slider","ylim_slider","labx","laby","limits_title", "xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"]
+
         if self.uselims_button.get() == 1:
-            row = 4 # 4 from the use_labels
             self.settings_frame.grid()
-            self.limits_title = App.create_label(self.settings_frame, text="Limits", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
-            self.labx = App.create_label(self.settings_frame, text="x limit", column=0, row=row+1)
-            self.laby = App.create_label(self.settings_frame, text="y limit", column=0, row=row+2)
-
-            xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
-
-            for i, (lim_lbox, lim_rbox, lim_min, lim_max, lim_slider) in enumerate(zip(["xlim_lbox", "ylim_lbox"], # lim_box - entries
-                                                                   ["xlim_rbox", "ylim_rbox"],
-                                                                   ["xlim_min", "ylim_min"],
-                                                                   ["xlim_max", "ylim_max"],
-                                                                   ["xlim_slider", "ylim_slider"])): # lim_slider - slider 
-                value_min = locals()[lim_min]
-                value_max = locals()[lim_max]
-
-                if not self.image_plot:
-                    new_value_min = value_min - (value_max-value_min)*0.2
-                    new_value_max = value_max + (value_max-value_min)*0.2
-                else: 
-                    new_value_min = value_min 
-                    new_value_max = value_max
-
-
-                # create the entry objects "self.xlim_lbox" ...
-                setattr(self, lim_lbox, App.create_entry(self.settings_frame, row=row+i+1, column=1, width=50))
-                setattr(self, lim_rbox, App.create_entry(self.settings_frame, row=row+i+1, column=4, width=50))
-                setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=new_value_min, to=new_value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), columnspan=2, init_value=[value_min, value_max]))
-
-                # get the name of the created object, first the entry, second the slider
-                entryl_widget = getattr(self,lim_lbox)
-                entryr_widget = getattr(self,lim_rbox)
-                slider_widget = getattr(self,lim_slider)
-
-                #set the properties of the entry object, key release event, set the value to the slider and update the limits,
-                # slider_widget = slider_widget is necessary to force the lambda function to capture the current value of slider_widget instead of calling it, when the key is pressed, otherwise slider_widget = ylim_r is used!
-                entryl_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: (slider_widget.set([float(val1.get()), float(val2.get())]), self.update_plot(val1)))
-                entryr_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: (slider_widget.set([float(val1.get()), float(val2.get())]), self.update_plot(val2)))
-                # insert the limits into the entry with 4 decimals
-                entryl_widget.insert(0,str(round(value_min,4-len(str(int(value_min))))))
-                entryr_widget.insert(0,str(round(value_max,4-len(str(int(value_max))))))
-
+            [getattr(self, name).grid() for name in widget_names]
         else:
-            for name in ["xlim_slider","ylim_slider","labx","laby","limits_title", "xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"]:
-                getattr(self, name).grid_remove()
+            [getattr(self, name).grid_remove() for name in widget_names]
             self.close_settings_window()
-        self.update_plot(None)
+
+        if self.initialize_plot_has_been_called:
+            self.update_plot("Update Limits")
+            print(self.xmin, self.xmax)
+            self.update_slider_limits()
+            xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
+            self.xlim_slider.set([xlim_min, xlim_max])
+            self.ylim_slider.set([ylim_min, ylim_max])
 
     def reset_limits(self):
                 # Slider
@@ -1372,13 +1387,17 @@ class App(customtkinter.CTk):
         if self.image_plot and self.ent_legend.get("0.0","end-1c") != "":
             self.ax1.legend(labels=[self.ent_legend.get("0.0","end-1c")], handles=[self.ax1.plot([],[])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, fontsize=self.legend_font_size,fancybox=True,**self.legend_type)
         elif self.clicked_axis_index is not None:
-            if not self.plot_container[self.clicked_axis_index][0][0].get_visible():
-                self.plot_container[self.clicked_axis_index][0].set_label(self.ent_legend.get("0.0","end-1c"))
+            plot_container = self.multiplot_container.copy()
+            plot_container.append(self.plot_container)
+            plot_container = plot_container[self.plot_index]
 
-            for ax_line in self.plot_container:
+            if not plot_container[self.clicked_axis_index][0][0].get_visible():
+                plot_container[self.clicked_axis_index][0].set_label(self.ent_legend.get("0.0","end-1c"))
+
+            for ax_line in plot_container:
                 ax_line = self.change_plot_visibility(ax_line, visibility=True)
 
-                self.make_line_legend(ax)
+                self.legend_container[self.plot_index] = self.make_line_legend(ax, remove=False, container=plot_container)
         self.canvas.draw()
     #############################################################
     ##################### multiplot #############################
@@ -1836,10 +1855,11 @@ class App(customtkinter.CTk):
         for i, (ax1,ax2) in enumerate(self.ax_container):
             if ax1.in_axes(event):
                 # highlighting the subplot
-                ax1.set_facecolor('lightgrey')
+                ax1.set_facecolor('0.9')
                 self.ax1 = ax1 
                 self.ax2 = ax2
                 self.plot_counter = i+1
+                self.plot_index = i
                 self.mouse_clicked_on_canvas = True
                 if self.uselabels_button.get() and self.update_labels_multiplot.get():
                     self.ent_xlabel.reinsert(0, self.ax1.xaxis.get_label().get_text())  # reinsert the old x- and y-labels
@@ -1854,6 +1874,7 @@ class App(customtkinter.CTk):
                 ax1.set_facecolor('white')
         
         logging.info(event)
+        logging.info(f"currently clicked subplot: {self.plot_index} (Info located in on_click())")
         # if no axes are clicked
         if event.inaxes == None:
             self.plot_counter = len(self.ax_container) + 1
@@ -1866,16 +1887,22 @@ class App(customtkinter.CTk):
         # proxy line, and toggle its visibility.
         legend_line = event.artist
 
+        logging.info(f"subplot index of the currently used plot: {self.plot_index} (Info located in on_pick())")
+        map_legend_to_ax = self.legend_container[self.plot_index]
+        plot_container = self.multiplot_container.copy()
+        plot_container.append(self.plot_container)
+
         # Do nothing if the source of the event is not a legend line.
-        if legend_line not in self.map_legend_to_ax:
+        if legend_line not in map_legend_to_ax:
             return
 
-        ax_line = self.map_legend_to_ax[legend_line]
+        ax_line = map_legend_to_ax[legend_line]
         visible = not ax_line[0][0].get_visible()
         ax_line = self.change_plot_visibility(ax_line, visible)
 
         # get the index of the clicked axis, this is important to reset the label of this axis
-        self.clicked_axis_index = next((i for i, plot in enumerate(self.plot_container) if plot is ax_line), None)
+        self.clicked_axis_index = next((i for i, plot in enumerate(plot_container[self.plot_index]) if plot is ax_line), None)
+        logging.info(f"Index of the currently selected line in the subplot: {self.clicked_axis_index} (Info located in on_pick())")
 
         # Change the alpha on the line in the legend, so we can see what lines have been toggled.
         legend_line.set_alpha(1.0 if visible else 0.2)
@@ -1956,9 +1983,9 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.normalize_value    = App.create_entry(self,column=2, row=15, width=70, columnspan=2, sticky='w', init_val=self.app.normalize_value)
         self.moving_av_list     = App.create_Menu(self, column=1, row=16, columnspan=2, values=self.moving_average, text="Average", command=self.apply_settings, init_val=self.app.moving_average)
         self.linewidth_slider   = App.create_slider(    self, column=1, row=17, columnspan=2, from_=0.1, to=2, width=155,
-                                                    command= lambda value, var="lw_var": self.update_slider_value(value, var), text="line width", number_of_steps=19, init_val=self.app.linewidth)
+                                                    command= lambda value, strvar="lw_var", var="linewidth": self.update_slider_value(value, strvar, var), text="line width", number_of_steps=19, init_val=self.app.linewidth)
         self.alpha_slider       = App.create_slider(    self, column=1, row=18, columnspan=2, from_=0, to=1, width=155,
-                                                    command= lambda value, var="alpha_var": self.update_slider_value(value, var), text="line alpha", number_of_steps=20, init_val=self.app.alpha)
+                                                    command= lambda value, strvar="alpha_var", var="alpha": self.update_slider_value(value, strvar, var), text="line alpha", number_of_steps=20, init_val=self.app.alpha)
 
         self.reset_button           = App.create_button(self, column=4, row=0, text="Reset Settings",   command=self.reset_values, width=130, pady=(20,5))
         self.minor_ticks_button     = App.create_switch(self, column=4, row=2, text="Use Minor Ticks",  command=lambda: (self.toggle_boolean(self.app.use_minor_ticks),self.apply_settings(None)))
@@ -2033,8 +2060,8 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.plot_type_list.set(list(self.plot_type.keys())[list(self.plot_type.values()).index(self.app.plot_type)])
         self.single_colors_list.set(list(self.single_colors.keys())[list(self.single_colors.values()).index(self.app.single_color)])
         self.update_rangeslider_value(list(self.app.clim), "pixel_range_var")
-        self.update_slider_value(self.app.linewidth, "lw_var")
-        self.update_slider_value(self.app.alpha, "alpha_var")
+        self.update_slider_value(self.app.linewidth, "lw_var", "linewidth")
+        self.update_slider_value(self.app.alpha, "alpha_var", "alpha")
 
         if self.app.use_scalebar.get(): self.scale_switch_button.select()
         if self.app.use_colorbar.get(): self.cbar_switch_button.select()
@@ -2079,13 +2106,15 @@ class SettingsWindow(customtkinter.CTkToplevel):
         self.linewidth_slider.set(1) # before next line!
         self.alpha_slider.set(1) # before next line!
         self.update_rangeslider_value((0,1), "pixel_range_var")
-        self.update_slider_value(1, "lw_var")
-        self.update_slider_value(1, "alpha_var")
+        self.update_slider_value(1, "lw_var", "linewidth")
+        self.update_slider_value(1, "alpha_var", "alpha")
           
-    def update_slider_value(self, value, var_name):
-        variable = getattr(self, var_name)
+    def update_slider_value(self, value, strvar_name, var_name):
+        variable = getattr(self, strvar_name)
         variable.set(str(round(value,2)))
-        self.apply_settings(None)
+
+        setattr(self.app, var_name, value)
+        self.app.update_plot(None)
 
     def update_rangeslider_value(self, value, var_name):
         variable = getattr(self, var_name)
@@ -2139,7 +2168,7 @@ class SettingsWindow(customtkinter.CTkToplevel):
                 self.app.update_lineout_aspect()
             self.app.canvas.draw()
         
-        self.app.plot_axis_parameters("ax1")
+        self.app.plot_axis_parameters("ax1", plot_counter=self.app.plot_counter)
         self.app.update_plot(None)
 
     def toggle_boolean(self, boolean):
@@ -2535,7 +2564,7 @@ class CustomEntry(customtkinter.CTkEntry):
         self.insert(index, text)  # Insert the new text
 
 if __name__ == "__main__":
-    level = logging.INFO
+    level = logging.INFO # INFO
     fmt = '[%(levelname)s] %(asctime)s - %(message)s'
     logging.basicConfig(level=level, format=fmt)
 
