@@ -1280,20 +1280,14 @@ class App(customtkinter.CTk):
         self.labx = App.create_label(self.settings_frame, text="x limit", column=0, row=row+1)
         self.laby = App.create_label(self.settings_frame, text="y limit", column=0, row=row+2)
 
-        xlim_min, xlim_max, ylim_min, ylim_max = (0,1,0,1)
-
-        for i, (lim_lbox, lim_rbox, lim_min, lim_max, lim_slider) in enumerate(zip(["xlim_lbox", "ylim_lbox"], # lim_box - entries
-                                                                ["xlim_rbox", "ylim_rbox"],
-                                                                ["xlim_min", "ylim_min"],
-                                                                ["xlim_max", "ylim_max"],
-                                                                ["xlim_slider", "ylim_slider"])): # lim_slider - slider 
-            value_min = locals()[lim_min]
-            value_max = locals()[lim_max]
+        for i, (lim_lbox, lim_rbox, lim_slider) in enumerate(zip(["xlim_lbox", "ylim_lbox"], # lim_box - entries
+                                                                 ["xlim_rbox", "ylim_rbox"],
+                                                                 ["xlim_slider", "ylim_slider"])): # lim_slider - slider 
 
             # create the entry objects "self.xlim_lbox" ...
             setattr(self, lim_lbox, App.create_entry(self.settings_frame, row=row+i+1, column=1, width=50))
             setattr(self, lim_rbox, App.create_entry(self.settings_frame, row=row+i+1, column=4, width=50))
-            setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=value_min, to=value_max, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), columnspan=2, init_value=[value_min, value_max]))
+            setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=0, to=1, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), columnspan=2, init_value=[0,1]))
 
             # get the name of the created object, first the entry, second the slider
             entryl_widget = getattr(self,lim_lbox)
@@ -1304,9 +1298,6 @@ class App(customtkinter.CTk):
             # slider_widget = slider_widget is necessary to force the lambda function to capture the current value of slider_widget instead of calling it, when the key is pressed, otherwise slider_widget = ylim_r is used!
             entryl_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: (slider_widget.set([float(val1.get()), float(val2.get())]), self.update_plot(val1)))
             entryr_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: (slider_widget.set([float(val1.get()), float(val2.get())]), self.update_plot(val2)))
-            # insert the limits into the entry with 4 decimals
-            entryl_widget.insert(0,str(round(value_min,4-len(str(int(value_min))))))
-            entryr_widget.insert(0,str(round(value_max,4-len(str(int(value_max))))))
         
         self.use_limits()
 
@@ -1321,12 +1312,11 @@ class App(customtkinter.CTk):
             self.close_settings_window()
 
         if self.initialize_plot_has_been_called:
-            self.update_plot("Update Limits")
-            print(self.xmin, self.xmax)
             self.update_slider_limits()
             xlim_min, xlim_max, ylim_min, ylim_max = self.reset_limits()
             self.xlim_slider.set([xlim_min, xlim_max])
             self.ylim_slider.set([ylim_min, ylim_max])
+            self.update_plot("Update Limits")
 
     def reset_limits(self):
                 # Slider
@@ -1758,7 +1748,7 @@ class App(customtkinter.CTk):
     def skip_rows(self, file_path):
         skiprows = 0
         for line in open(file_path, 'r'):
-            if line[0].isdigit():
+            if line[0].isdigit() or (line[0] == " " and line[1].isdigit()):
                 break
             else:
                 skiprows += 1
