@@ -227,6 +227,14 @@ def determine_delimiter_and_column_count(file_path, skip_row):
         
         return delimiter, max_columns
 
+def format_number(val):
+    # Format with 5 significant digits, using scientific notation if the value is very small or large
+    if abs(val) < 0.001 or abs(val) >= 1e5:  # Threshold for switching to scientific notation
+        return f"{val:.4e}"  # Scientific notation with 5 significant digits
+    else:
+        # if val < 0: fill_zeros += 1
+        return f"{val:.4f}"  # Standard float with 5 significant digits
+    
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
@@ -361,12 +369,13 @@ class App(customtkinter.CTk):
         self.normalize_button = App.create_switch(frame, text="Normalize",  command=self.normalize_setup,    column=0, row=11, padx=20)
         self.lineout_button   = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
         self.FFT_button       = App.create_switch(frame, text="FFT",  command=self.fourier_trafo,    column=0, row=13, padx=20)
+        self.subfolder_button = App.create_switch(frame, text="include subfolders", command=self.load_file_list, row=16, column=0, padx=20)
         
         #Data Table section
         self.data_table_button= App.create_switch(self.tabview.tab("Data Table"), text="Plot data table & custom data", command=None, row=0, column=0, padx=20)
         self.mid_axis_button  = App.create_switch(self.tabview.tab("Data Table"), text="middle axis lines", command=None, row=1, column=0, padx=20)
         self.yerror_area_button  = App.create_switch(self.tabview.tab("Data Table"), text="display y-error as shaded area", command=None, row=2, column=0, padx=20)
-        self.data_table       = App.create_table(self.tabview.tab("Data Table"), data=np.vstack((np.linspace(0,5,100),np.linspace(0,5,100)**2)).T, width=300, sticky='ns', row=3, column=0, pady=(20,10), padx=10, rowspan=11)
+        self.data_table       = App.create_table(self.tabview.tab("Data Table"), width=300, sticky='ns', row=3, column=0, pady=(20,10), padx=10, rowspan=11)
         self.xval_min_entry   = App.create_entry(self.tabview.tab("Data Table"), row=0, column=3, width=90, text="x-limits", placeholder_text="x min")
         self.xval_max_entry   = App.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=90, placeholder_text="x max")
         self.function_entry   = App.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)")
@@ -407,7 +416,8 @@ class App(customtkinter.CTk):
                     "save_lineout_button": "Save the lineout into a data file",
                     "yerror_area_button": "off: Use errorbars with caps\non: Display the y-error as a shaded area above and below the line",
                     "mid_axis_button": "off: Use standard outside axis\non: Use middle line axis centered at (0,0)",
-                    "function_entry": "Enter a mathematical function to display, Use numpy syntax\n List of possible functions:\n- np.sin(x), np.cos(x), np.tan(x)\n- np.arcsin(x), np.arccos(x)\n- np.deg2rad(x), np.rad2deg(x)\n- np.sinh(x), np.cosh(x), np.tanh(x)\n- np.exp(x), np.log(x), np.log10(x), np.log2(x)\n- np.i0(x) - Bessel function, np.sinc(x)\n- np.sqrt(x), np.cbrt(x), np.sign(x)\n- np.heaviside(x,0)"
+                    "function_entry": "Enter a mathematical function to display, Use numpy syntax\n List of possible functions:\n- np.sin(x), np.cos(x), np.tan(x)\n- np.arcsin(x), np.arccos(x)\n- np.deg2rad(x), np.rad2deg(x)\n- np.sinh(x), np.cosh(x), np.tanh(x)\n- np.exp(x), np.log(x), np.log10(x), np.log2(x)\n- np.i0(x) - Bessel function, np.sinc(x)\n- np.sqrt(x), np.cbrt(x), np.sign(x)\n- np.heaviside(x,0)",
+                    "subfolder_button": "Display also files from any subfolder within the current directory"
                     }
         
         for name, description in self.tooltips.items():
@@ -417,8 +427,8 @@ class App(customtkinter.CTk):
                 getattr(self, name).configure(state="disabled")
 
         
-        self.appearance_mode_label = App.create_label(frame, text="Appearance Mode:", row=17, column=0, padx=20, pady=(10, 0), sticky="w")
-        self.appearance_mode_optionemenu = App.create_Menu(frame, values=["Dark","Light", "System"], command=self.change_appearance_mode_event, width=200, row=18, column=0, padx=20, pady=(5,10))
+        # self.appearance_mode_label = App.create_label(frame, text="Appearance Mode:", row=17, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.appearance_mode_optionemenu = App.create_Menu(frame, values=["Appearance: Dark","Appearance: Light", "Appearance: System"], command=self.change_appearance_mode_event, width=200, row=18, column=0, padx=20, pady=(5,10))
         
         #entries
         self.folder_path = self.create_entry(column=2, row=0, text="Folder path", columnspan=2, width=600, padx=10, pady=10, sticky="w")
@@ -515,16 +525,12 @@ class App(customtkinter.CTk):
 
         return slider
     
-    def create_table(self, data,  width, row, column,header=None, sticky=None, rowspan=1, **kwargs):
+    def create_table(self,  width, row, column, sticky=None, rowspan=1, **kwargs):
         text_widget = customtkinter.CTkTextbox(self, width = width, padx=10, pady=5)
         # text_widget.pack(fill="y", expand=True)
         text_widget.grid(row=row, column=column, sticky=sticky, rowspan=rowspan, **kwargs)
         self.grid_rowconfigure(row+rowspan-1, weight=1)
-        if header is not None:
-            text_widget.insert("0.0", "\t".join(header) + "\n")
 
-        for row in data:
-            text_widget.insert("end", " \t ".join(map(str, np.round(row,2))) + "\n")
         return text_widget
     
     def create_textbox(self, row, column, width=200, height=28, text=None, columnspan=1, rowspan=1, padx=10, pady=5, sticky='w', sticky_label='e', textwidget=False, init_val=None, **kwargs):
@@ -846,7 +852,6 @@ class App(customtkinter.CTk):
         return self.map_legend_to_ax
 
     def make_line_plot(self, dat, ax):
-        print(self.plot_counter)
         if self.multiplot_button.get():
                 if self.two_axis_button.get():
                     if self.first_ax2:
@@ -863,9 +868,11 @@ class App(customtkinter.CTk):
 
         # Display data in the data table
         self.data_table.delete("0.0", "end")  # delete all text
+
         for row in self.data:
-            self.data_table.insert("end", " \t ".join(map(str, np.round(row,4))) + "\n")
-        
+            self.data_table.insert("end", " \t ".join(format_number(val) for i, val in enumerate(row)) + "\n")
+
+            
         data = getattr(self,dat)
         axis = getattr(self,ax)
         
@@ -1143,11 +1150,11 @@ class App(customtkinter.CTk):
                 comma_to_dot = lambda x: float(x.decode('utf-8').replace(file_decimal, '.'))
 
                 # Load the data, applying the converter to all columns
-                data = np.genfromtxt(file_path, skip_header=skip_rows, delimiter=delimiter, converters={i: comma_to_dot for i in range(maxcolumns)})
-                data = data[:, ~np.isnan(data).all(axis=0)]
-            except: 
+                data = np.genfromtxt(file_path, skip_header=skip_rows, delimiter=delimiter,  filling_values=np.nan,  converters={i: comma_to_dot for i in range(maxcolumns)})
+                # data = data[:, ~np.isnan(data).all(axis=0)]
+            except Exception as error: 
                 data = np.loadtxt(file_path)
-                logging.error("np.genfromtxt was not succesfull, fallback to np.loadtxt")
+                logging.error(f"np.genfromtxt was not succesful, fallback to np.loadtxt, Error = {error}")
         
         return data
 
@@ -1186,7 +1193,16 @@ class App(customtkinter.CTk):
         
     def load_file_list(self, val=None):
         global filelist
-        filelist = natsorted([fname for fname in os.listdir(self.folder_path.get()) if fname.endswith(file_type_names)])
+        if self.subfolder_button.get():
+            filelist = natsorted(
+            [ os.path.relpath(os.path.join(root, fname), start=self.folder_path.get())
+                for root, _, files in os.walk(self.folder_path.get())
+                for fname in files
+                if fname.endswith(file_type_names)
+            ])
+        else:
+            filelist = natsorted([fname for fname in os.listdir(self.folder_path.get()) if fname.endswith(file_type_names)])
+        
         self.optmenu.configure(values=filelist)
         self.optmenu.set(filelist[0])
     
@@ -1788,6 +1804,7 @@ class App(customtkinter.CTk):
             logging.warning("No decimal separators (commas or dots) were found in the file.")
     
     def change_appearance_mode_event(self, new_appearance_mode: str):
+        new_appearance_mode = new_appearance_mode.replace("Appearance: ", "")
         customtkinter.set_appearance_mode(new_appearance_mode)
         if new_appearance_mode == "Light":
             self.color = "#e5e5e5"
@@ -2441,22 +2458,22 @@ class FitWindow(customtkinter.CTkFrame):
 ##############################     Table  Window     #######################################
 ############################################################################################
 '''
-class Table(customtkinter.CTkScrollableFrame):
-    def __init__(self, master, data, **kwargs):
-        super().__init__(master, **kwargs)
+# class Table(customtkinter.CTkScrollableFrame):
+#     def __init__(self, master, data, **kwargs):
+#         super().__init__(master, **kwargs)
 
-        self.columns = ("x", "y")
-        self.data = data
+#         self.columns = ("x", "y")
+#         self.data = data
 
-        self.text_widget = customtkinter.CTkTextbox(self, padx=10, pady=5)
-        self.text_widget.grid(row=0, column=0, sticky="nsew")
-        self.grid_columnconfigure(0, weight=1)
+#         self.text_widget = customtkinter.CTkTextbox(self, padx=10, pady=5)
+#         self.text_widget.grid(row=0, column=0, sticky="nsew")
+#         self.grid_columnconfigure(0, weight=1)
         
-        self.text_widget.insert("1.0", "\t".join(self.columns) + "\n")
+#         self.text_widget.insert("1.0", "\t".join(self.columns) + "\n")
 
-        for row in self.data:
-            # self.insert_data(row)
-            self.text_widget.insert("end", "\t".join(map(str, row)) + "\n")
+#         for row in self.data:
+#             # self.insert_data(row)
+#             self.text_widget.insert("end", "\t".join(map(str, row)) + "\n")
 
 class CreateToolTip(object):
     """
