@@ -212,7 +212,7 @@ def determine_delimiter_and_column_count(file_path, skip_row):
         target_line = file.readline().strip()
         
         # Potential delimiters
-        delimiters = [';', '\t', ' ']
+        delimiters = [';', '\t',' ']
         if '.' in target_line:
             delimiters.append(',')
         delimiter = None
@@ -223,8 +223,12 @@ def determine_delimiter_and_column_count(file_path, skip_row):
             columns = target_line.split(d)
             if len(columns) > max_columns:
                 max_columns = len(columns)
-                delimiter = d
+                if d == ' ': # handle any amount of white space
+                    delimiter = None
+                else:
+                    delimiter = d
         
+
         return delimiter, max_columns
 
 def format_number(val):
@@ -378,12 +382,13 @@ class App(customtkinter.CTk):
         self.data_table       = App.create_table(self.tabview.tab("Data Table"), width=300, sticky='ns', row=3, column=0, pady=(20,10), padx=10, rowspan=11)
         self.xval_min_entry   = App.create_entry(self.tabview.tab("Data Table"), row=0, column=3, width=90, text="x-limits", placeholder_text="x min")
         self.xval_max_entry   = App.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=90, placeholder_text="x max")
-        self.function_entry   = App.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)")
+        self.datapoint_number_entry = App.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=90, text="length", placeholder_text="Default: 500")
+        self.function_entry   = App.create_entry(self.tabview.tab("Data Table"), row=2, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)")
 
         self.column_dict = {}
         self.column_values = ["None", "x-values", "y-values", "x-error", "y-error"]
         for i in range(0,10):
-            self.column_dict[f'column{i}'], self.column_dict[f'column{i}_label'] = App.create_Menu(self.tabview.tab("Data Table"), column=3, row= 2+i, width=100, values=self.column_values, columnspan=2, sticky='w',textwidget=True, text=f'column {i+1}')
+            self.column_dict[f'column{i}'], self.column_dict[f'column{i}_label'] = App.create_Menu(self.tabview.tab("Data Table"), column=3, row= 3+i, width=100, values=self.column_values, columnspan=2, sticky='w',textwidget=True, text=f'column {i+1}')
         
         self.column_dict["column0"].set("x-values")
         self.column_dict["column1"].set("y-values")
@@ -1097,12 +1102,13 @@ class App(customtkinter.CTk):
                 ax.set_ylim(bottom=float(self.y_l - pad_val * (self.y_r - self.y_l)), top=float(  self.y_r + pad_val * (self.y_r - self.y_l)))
                 
                 if (self.plot_type == "semilogx" or self.plot_type == "loglog"):
-                    xlim_l = calc_log_value(self.x_l - pad_val * (self.x_r - self.x_l), np.min(abs(self.data[:,0])), np.max(self.data[:,0]))
-                    xlim_r = calc_log_value(self.x_r + pad_val * (self.x_r - self.x_l), np.min(abs(self.data[:,0])), np.max(self.data[:,0]))
+                    xlim_l = calc_log_value(self.x_l - pad_val * (self.x_r - self.x_l), np.min(np.abs(self.data[:,0])), np.max(self.data[:,0]))
+                    xlim_r = calc_log_value(self.x_r + pad_val * (self.x_r - self.x_l), np.min(np.abs(self.data[:,0])), np.max(self.data[:,0]))
                     ax.set_xlim(left=float(xlim_l), right=float(xlim_r))
                 if (self.plot_type == "semilogy" or self.plot_type == "loglog"):
-                    ylim_l = calc_log_value(self.y_l - pad_val * (self.y_r - self.y_l), np.min(abs(self.data[:,1])), np.max(self.data[:,1]))
-                    ylim_r = calc_log_value(self.y_r + pad_val * (self.y_r - self.y_l), np.min(abs(self.data[:,1])), np.max(self.data[:,1]))
+                    ylim_l = calc_log_value(self.y_l - pad_val * (self.y_r - self.y_l), np.min(np.abs(self.data[:,1])), np.max(self.data[:,1]))
+                    ylim_r = calc_log_value(self.y_r + pad_val * (self.y_r - self.y_l), np.min(np.abs(self.data[:,1])), np.max(self.data[:,1]))
+                    print(ylim_l, ylim_r, np.min(abs(self.data[:,1])), self.data[:,1])
                     ax.set_ylim(bottom=float(ylim_l), top=float(ylim_r))
 
         if self.fit_button.get():
@@ -1134,7 +1140,10 @@ class App(customtkinter.CTk):
             data = self.read_table_data(self.data_table.get("0.0","end"))
 
             if self.function_entry.get() != "":
-                x = np.linspace(float(self.xval_min_entry.get()), float(self.xval_max_entry.get()),500)
+                xmin = float(self.xval_min_entry.get()) if self.xval_min_entry.get() else -5
+                xmax = float(self.xval_max_entry.get()) if self.xval_max_entry.get() else 5
+                length = int(self.datapoint_number_entry.get()) if self.datapoint_number_entry.get() else 500
+                x = np.linspace(xmin, xmax,length)
                 globals_dict = {"np": np, "x": x}
                 y = eval(self.function_entry.get(), globals_dict)
                 data = np.vstack((x,y)).T
@@ -1764,7 +1773,7 @@ class App(customtkinter.CTk):
     def skip_rows(self, file_path):
         skiprows = 0
         for line in open(file_path, 'r'):
-            if line[0].isdigit() or (line[0] == " " and line[1].isdigit()):
+            if line[0].isdigit() or (line[0] == " " and line[1].isdigit()) or (line[0] == "-" and line[1].isdigit()):
                 break
             else:
                 skiprows += 1
