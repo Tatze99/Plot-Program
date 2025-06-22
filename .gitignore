@@ -5,7 +5,8 @@ untitled1.py
 *.pyc
 *.dat
 
-.venv/**
+.venv/
+venv/
 output/**
 auto-py-to-exe.json
 

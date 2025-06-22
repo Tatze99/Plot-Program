@@ -896,10 +896,17 @@ class App(customtkinter.CTk):
 
         x_data, y_data_list, xerr, yerr = self.get_column_parameters(data)
 
-        self.ymax = max(np.max(y_data_list), self.ymax)
         self.ymin = min(np.min(y_data_list), self.ymin)
         self.xmax = max(np.max(x_data), self.xmax)
         self.xmin = min(np.min(x_data), self.xmin)
+
+        if not self.uselims_button.get():
+            self.ymax = max(np.max(y_data_list), self.ymax)
+        else:
+            xmin_index = np.argmin(abs(x_data - self.xlim_slider.get()[0]))
+            xmax_index = np.argmin(abs(x_data - self.xlim_slider.get()[1]))
+            y_data_list_cropped = [y_data[xmin_index:xmax_index] for y_data in y_data_list]
+            self.ymax = max(np.max(y_data_list_cropped), self.ymax)
 
         ######### create the plot
         plot = getattr(axis, "errorbar")
@@ -1156,7 +1163,8 @@ class App(customtkinter.CTk):
                 logging.info(f"skip rows = {skip_rows}, file decimal = {file_decimal}, delimiter = '{delimiter}', max columns = {maxcolumns}")
 
                 # Custom converter to replace commas with dots, for numpy v>2.0.0, you need to remove ".decode('utf-8')"
-                comma_to_dot = lambda x: float(x.decode('utf-8').replace(file_decimal, '.'))
+                # comma_to_dot = lambda x: float(x.decode('utf-8').replace(file_decimal, '.'))
+                comma_to_dot = lambda x: float(x.replace(file_decimal, '.'))
 
                 # Load the data, applying the converter to all columns
                 data = np.genfromtxt(file_path, skip_header=skip_rows, delimiter=delimiter,  filling_values=np.nan,  converters={i: comma_to_dot for i in range(maxcolumns)})
