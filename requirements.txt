@@ -1,0 +1,7 @@
+matplotlib
+numpy
+scipy
+customtkinter
+CTkTable
+matplotlib_scalebar
+natsort

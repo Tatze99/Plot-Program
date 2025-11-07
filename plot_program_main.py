@@ -43,6 +43,11 @@ plt.style.use('default')
 # plt.style.use(os.path.join(Standard_path, "dark_mode.mplstyle"))
 matplotlib.rc('font', family='serif')
 matplotlib.rc('font', serif='Times New Roman')
+matplotlib.rcParams['mathtext.fontset'] = 'custom'
+matplotlib.rcParams['mathtext.rm'] = 'Times New Roman'
+matplotlib.rcParams['mathtext.it'] = 'Times New Roman:italic'
+matplotlib.rcParams['mathtext.bf'] = 'Times New Roman:bold'
+
 file_type_names = ('.csv', '.dat', '.txt', '.png', '.jpg', '.jpeg', '.spec', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm', '.lvm')
 image_type_names = ('png','.jpg', '.jpeg', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm')
 sequential_colormaps = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper','Purples', 'Blues', 'Greens', 'Oranges', 'Reds','twilight', 'hsv', 'rainbow', 'jet', 'turbo', 'gnuplot', 'brg']
@@ -1802,7 +1807,32 @@ class App(customtkinter.CTk):
             if self.image_plot:
                 np.savetxt(file_name, self.data.astype(int), fmt='%i')
             else:
-                np.savetxt(file_name, self.data)
+                # np.savetxt(file_name, self.data)
+                all_data = []
+                headers = []
+
+                # Collect data
+                for i, ax in enumerate(self.fig.axes):
+                    for j, line in enumerate(ax.get_lines()):
+                        x = line.get_xdata()
+                        y = line.get_ydata()
+                        # make sure lengths match if different lines differ
+                        length = min(len(x), len(y))
+                        all_data.append(np.column_stack([x[:length], y[:length]]))
+                        headers.extend([f"X{i}_{j}", f"Y{i}_{j}"])
+
+                # Align all datasets by rows (pad with blanks if needed)
+                max_len = max(arr.shape[0] for arr in all_data)
+                aligned = np.full((max_len, len(all_data)*2), "", dtype=object)
+
+                for k, arr in enumerate(all_data):
+                    aligned[:arr.shape[0], 2*k:2*k+2] = arr
+
+                # Write to file
+                with open(file_name, "w") as f:
+                    f.write("\t".join(headers) + "\n")
+                    for row in aligned:
+                        f.write("\t".join(f"{float(val):.5e}" if val != "" else "" for val in row) + "\n")
 
     # Open a file and count the number of . and , to decide the delimiter
     def open_file(self, file_path) -> str:
