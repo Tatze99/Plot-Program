@@ -514,24 +514,24 @@ class App(customtkinter.CTk):
     def create_slider(self, from_, to, row, column, width=200, text=None, init_val=None, command=None, columnspan=1, number_of_steps=1000, padx = 10, pady=5, sticky='w', textwidget=False,**kwargs):
         slider = customtkinter.CTkSlider(self, from_=from_, to=to, width=width, command=command, number_of_steps=number_of_steps)
         slider.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
+        if init_val is not None:
+            slider.set(init_val)
         if text is not None:
             slider_label = App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e')
             if textwidget == True:
                 return (slider, slider_label)
-        if init_val is not None:
-            slider.set(init_val)
 
         return slider
     
     def create_range_slider(self, from_, to, row, column, width=200, text=None, init_value=None, command=None, columnspan=1, number_of_steps=None, padx = 10, pady=5, sticky='w', textwidget=False,**kwargs):
         slider = CTkRangeSlider(self, from_=from_, to=to, width=width, command=command, number_of_steps=number_of_steps)
         slider.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
+        if init_value is not None:
+            slider.set(init_value)
         if text is not None:
             slider_label = App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e')
             if textwidget == True:
                 return (slider, slider_label)
-        if init_value is not None:
-            slider.set(init_value)
 
         return slider
     
