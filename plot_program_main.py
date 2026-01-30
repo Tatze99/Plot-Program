@@ -63,10 +63,10 @@ def lorentz(x, a, w0, gamma, d):
     return a**2 / ((x**2 - w0**2)**2 + gamma**2*w0**2) + d
 
 def gauss(x, a, b, c, d):
-    return a * np.exp(-(x - b)**2 / (2 * c**2)) + d
+    return a * np.exp(-2*(x - b)**2 / (c**2)) + d
 
 def gauss3(x, a, b, c, d):
-    return a * np.exp(-abs(x - b)**3 / (2 * c**2)) + d
+    return a * np.exp(-2*abs(x - b)**3 / (c**2)) + d
 
 def sqrt(x, a, b, c):
     return a * np.sqrt(b * x) + c
@@ -325,6 +325,7 @@ class App(customtkinter.CTk):
         self.function = gauss
         self.params = [1,1,1,1]
         self.fitted_params = [0,0,0,0]
+        self.fit_params_box = None
 
         # Boolean variables
         self.image_plot = True
@@ -639,7 +640,7 @@ class App(customtkinter.CTk):
             self.lineout_button.configure(state="enabled")
             self.FFT_button.configure(state="disabled")
             if self.lineout_button.get():
-                if self.fit_button.get(): self.fit_button.toggle()
+                # if self.fit_button.get(): self.fit_button.toggle()
                 self.fit_button.configure(state="enabled")
             else: self.fit_button.configure(state="disabled")
         else:
@@ -775,7 +776,7 @@ class App(customtkinter.CTk):
             if first_col or self.label_settings == "default" or self.mid_axis_button.get(): 
                 axis.set_ylabel(self.ent_ylabel.get())
 
-        if self.fit_button.get():
+        if self.fit_button.get() and self.fit_params_box is not None:
             if self.display_fit_params_in_plot.get():
                 self.fit_params_box.set_visible(True)
             else: self.fit_params_box.set_visible(False)
@@ -960,6 +961,7 @@ class App(customtkinter.CTk):
 
         # create the fit
         if self.use_fit == 1 and not(self.FFT_button.get() and ax=="ax1") and (not self.image_plot or self.fit_button.get()):
+            print("Creating fit plot")
             self.make_fit_plot(ax, dat)
 
         if self.FFT_button.get() and ax == "ax1":
@@ -1081,7 +1083,7 @@ class App(customtkinter.CTk):
         if self.use_colorbar.get():
             self.cbar = self.fig.colorbar(self.image, pad=0.01)
 
-        self.plot_axis_parameters("ax1", plot_counter = self.plot_index+1)
+        self.plot_axis_parameters("ax1", plot_counter = self.plot_index)
         
     def update_plot(self, val):
         ax = self.ax2 if self.two_axis_button.get() else self.ax1
@@ -1120,7 +1122,6 @@ class App(customtkinter.CTk):
                 if (self.plot_type == "semilogy" or self.plot_type == "loglog"):
                     ylim_l = calc_log_value(self.y_l - pad_val * (self.y_r - self.y_l), np.min(np.abs(self.data[:,1])), np.max(self.data[:,1]))
                     ylim_r = calc_log_value(self.y_r + pad_val * (self.y_r - self.y_l), np.min(np.abs(self.data[:,1])), np.max(self.data[:,1]))
-                    print(ylim_l, ylim_r, np.min(abs(self.data[:,1])), self.data[:,1])
                     ax.set_ylim(bottom=float(ylim_l), top=float(ylim_r))
 
         if self.fit_button.get():
@@ -1212,7 +1213,7 @@ class App(customtkinter.CTk):
         if path != "":
             self.folder_path.reinsert(0, path)
         self.load_file_list()
-        
+         
     def load_file_list(self, val=None):
         global filelist
         if self.subfolder_button.get():
@@ -2359,8 +2360,8 @@ class FitWindow(customtkinter.CTkFrame):
         self.function = {'Gaussian': gauss, 'Gaussian 3rd': gauss3, 'Lorentz': lorentz, 'Linear': linear, 'Quadratic': quadratic, 'Exponential': exponential, 'Logarithmic': logarithm ,'Square Root': sqrt, 'Hyperbola': hyperbola}
 
         self.function_label = App.create_label(app.settings_frame, text="", column=1, row=self.row +1, width=80, columnspan=4, anchor='e', sticky="w", pady=(0,10))
-        self.function_label_list = {'Gaussian': ["f(x) = a·exp(-(x-b)²/(2·c²)) + d", r"f(x) = a \cdot \exp\left(-\,\dfrac{(x-b)^2}{(2·c^2)}\right) + d"], 
-                                    'Gaussian 3rd': ["f(x) = a·exp(-|x-b|³/(2·c²)) + d", r"f(x) = a \cdot \exp\left(-\,\dfrac{|x-b|^3}{(2·c^2)}\right) + d"], 
+        self.function_label_list = {'Gaussian': ["f(x) = a·exp(-2(x-b)²/c²) + d", r"f(x) = a \cdot \exp\left(-2\,\dfrac{(x-b)^2}{c^2}\right) + d"], 
+                                    'Gaussian 3rd': ["f(x) = a·exp(-2|x-b|³/c²) + d", r"f(x) = a \cdot \exp\left(-2\,\dfrac{|x-b|^3}{c^2}\right) + d"], 
                                     'Lorentz': ["f(x) = a²/[(x²-b²)² + c²·b²]+d", r"f(x) = \dfrac{a^2}{(x^2 - b^2)^2 + c^2 \cdot b^2}+d"],
                                     'Linear': ["f(x) = a·x + b", r"f(x) = a\cdot x + b"], 
                                     'Quadratic': ["f(x) = a·x² + b·x + c", r"f(x) = a\cdot x^2 + b\cdot x+c"], 
@@ -2452,7 +2453,7 @@ class FitWindow(customtkinter.CTkFrame):
         for i,name in enumerate(["a","b","c","d","FWHM"]):
             if self.function_name == "Gaussian":
                 self.number_of_args += 1
-                params = np.append(params, 2*np.sqrt(2*np.log(2))*params[2]) 
+                params = np.append(params, np.sqrt(2*np.log(2))*params[2]) 
                 error = np.pad(error, ((0, 1), (0, 1)), mode='constant')
                 error[-1,-1] = error[2,2] * params[-1]
             
