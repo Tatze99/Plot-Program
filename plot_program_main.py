@@ -27,6 +27,7 @@ from PIL import Image, ImageTk
 from natsort import natsorted
 import io # used for latex display buffer
 import logging
+import json
 
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -37,8 +38,12 @@ def toggle_bool(event=None):
     global tooltips_enabled
     tooltips_enabled = not tooltips_enabled
 
-version_number = "24/08"
+version_number = "26/05"
 Standard_path = os.path.dirname(os.path.abspath(__file__))
+
+with open(os.path.join(Standard_path, "tooltips.json"), "r", encoding="utf-8") as file:
+    TOOLTIPS = json.load(file)
+
 plt.style.use('default')
 # plt.style.use(os.path.join(Standard_path, "dark_mode.mplstyle"))
 matplotlib.rc('font', family='serif')
@@ -54,7 +59,8 @@ sequential_colormaps = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis',
 
 ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
-filelist = natsorted([fname for fname in os.listdir(Standard_path) if fname.endswith(file_type_names)])
+TEST_PATH = os.path.join(Standard_path, "test_data")    
+filelist = natsorted([fname for fname in os.listdir(TEST_PATH) if fname.endswith(file_type_names)])
 
 def exponential(x, a, b, c): 
     return a * np.exp(b * x) + c
@@ -256,9 +262,8 @@ class App(customtkinter.CTk):
         self.initialize_ui_images()
         self.initialize_ui()
         self.initialize_plot_has_been_called = False
-        self.folder_path.insert(0, Standard_path)
-        self.toplevel_window = {'Plot Settings': None,
-                                'Legend Settings': None}
+        self.folder_path.insert(0, TEST_PATH)
+        self.toplevel_window = {'Legend Settings': None}
         # hide the multiplot button
         self.addplot_button.grid_remove() 
         self.reset_button.grid_remove()
@@ -341,6 +346,24 @@ class App(customtkinter.CTk):
         self.rows = 1
         self.cols = 1
         self.mouse_clicked_on_canvas = False
+
+        # settings tab options
+        self.settings_canvas_ratio = {'Auto': None, 'Custom': 0,'4:3 ratio': 4/3, '16:9 ratio': 16/9, '3:2 ratio': 3/2, '3:1 ratio': 3,'2:1 ratio': 2, '1:1 ratio': 1, '1:2 ratio': 0.5}
+        self.settings_ticks_settings = ["smart", "smart + tight", "default", "no ticks"]
+        self.settings_label_settings = ["smart", "default"]
+        self.settings_aspect_values = ['equal', 'auto']
+        self.settings_cmap_imshow = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper']
+        self.settings_linestyle = {'solid': '-', 'dashed': '--', 'dotted': ':', 'dashdotted': '-.', 'no line': ''}
+        self.settings_marker = {'none':'', 'point':'.', 'circle':'o', 'pixel':',', '∇': 'v', 'Δ': '^', 'x': 'x', '◆': 'D'}
+        self.settings_grid_lines = ['major','minor','both']
+        self.settings_grid_axis = ['both', 'x', 'y']
+        self.settings_cmap = ['tab10', 'tab20', 'tab20b','tab20c', 'Pastel1', 'Pastel2', 'Paired', 'Accent', 'Dark2', 'Set1', 'Set2', 'Set3', 'CUSTOM']
+        self.settings_cmap.extend(sequential_colormaps)
+        self.settings_moving_average = ['1','2','4','6','8','10','16']
+        self.settings_cmap_length = ['5','10','15','20','25','30','35','40']
+        self.settings_single_color = {'blue':'tab:blue','orange':'tab:orange','green':'tab:green','red':'tab:red','purple':'tab:purple','brown':'tab:brown','pink':'tab:pink','gray':'tab:gray','olive':'tab:olive','cyan':'tab:cyan'}
+        self.settings_plot_type = {'Linear': 'errorbar', 'Semi Logarithmic x': 'semilogx', 'Semi Logarithmic y': 'semilogy', 'Log-Log plot': 'loglog'}
+        self.settings_normalize_function = ['Maximum', 'Area', 'Only Factor']
         
     # user interface, gets called when the program starts 
     def initialize_ui(self):
@@ -350,102 +373,71 @@ class App(customtkinter.CTk):
         self.sidebar_frame.rowconfigure(15, weight=1)
         self.rowconfigure(11,weight=1)
 
-        App.create_label(self.sidebar_frame, text="GIES v."+version_number, font=customtkinter.CTkFont(size=20, weight="bold"),row=0, column=0, padx=20, pady=(10,15), sticky=None)
+        self.create_label(self.sidebar_frame, text="GIES v."+version_number, font=customtkinter.CTkFont(size=20, weight="bold"),row=0, column=0, padx=20, pady=(10,15), sticky=None)
         
         self.tabview = customtkinter.CTkTabview(self, width=250, command=lambda: self.toggle_toolbar(self.tabview.get()))
         self.tabview.grid(row=3, column=1, padx=(10, 10), pady=(20, 0), columnspan=2, sticky="nsew", rowspan=10)
         self.tabview.add("Show Plots")
         self.tabview.add("Data Table")
+        self.tabview.add("Settings")
         self.tabview.tab("Show Plots").columnconfigure(0, weight=1)
         self.tabview.tab("Show Plots").rowconfigure(0, weight=1)
 
         #buttons
         frame = self.sidebar_frame
         
-        self.plot_button    = App.create_button(frame, text="Reset graph", command=self.initialize, column=0, row=5, pady=(15,5), image=self.img_reset)
-        self.reset_button   = App.create_button(frame, text="Reset",       command=self.initialize_plot, column=0, row=5, width=90, padx = (10,120), pady=(15,5))   # Multiplot button
-        self.addplot_button = App.create_button(frame, text="Multiplot",   command=self.plot,            column=0, row=5, width=90, padx = (120,10), pady=(15,5))   # Multiplot button
-        self.load_button    = App.create_button(frame, text="Load Folder", command=self.read_file_list,  column=0, row=1, image=self.img_folder)
-        self.save_button    = App.create_button(frame, text="Save Figure/data", command=self.save_figure,     column=0, row=3,  image=self.img_save)
-        self.set_button     = App.create_button(frame, text="Plot settings",command=lambda: self.open_toplevel(SettingsWindow, "Plot Settings"), column=0, row=4, image=self.img_settings)
-        self.prev_button    = App.create_button(frame,                      command=lambda: self.change_plot(self.replot,-1), column=0, row=6, width=90, padx = (10,120), image=self.img_previous)
-        self.next_button    = App.create_button(frame,                      command=lambda: self.change_plot(self.replot,1), column=0, row=6, width=90, padx = (120,10), image=self.img_next)
+        self.plot_button    = self.create_button(frame, text="Reset graph", command=self.initialize, column=0, row=5, pady=(15,5), image=self.img_reset)
+        self.reset_button   = self.create_button(frame, text="Reset",       command=self.initialize_plot, column=0, row=5, width=90, padx = (10,120), pady=(15,5))   # Multiplot button
+        self.addplot_button = self.create_button(frame, text="Multiplot",   command=self.plot,            column=0, row=5, width=90, padx = (120,10), pady=(15,5))   # Multiplot button
+        self.load_button    = self.create_button(frame, text="Load Folder", command=self.read_file_list,  column=0, row=1, image=self.img_folder)
+        self.save_button    = self.create_button(frame, text="Save Figure/data", command=self.save_figure,     column=0, row=3,  image=self.img_save)
+        self.set_button     = self.create_button(frame, text="Plot settings",command=lambda: self.tabview.set("Settings"), column=0, row=4, image=self.img_settings)
+        self.prev_button    = self.create_button(frame,                      command=lambda: self.change_plot(self.replot,-1), column=0, row=6, width=90, padx = (10,120), image=self.img_previous)
+        self.next_button    = self.create_button(frame,                      command=lambda: self.change_plot(self.replot,1), column=0, row=6, width=90, padx = (120,10), image=self.img_next)
         
         #switches
-        self.multiplot_button = App.create_switch(frame, text="Multiplot",  command=self.multiplot,   column=0, row=7, padx=20, pady=(10,5))
-        self.uselabels_button = App.create_switch(frame, text="Use labels", command=self.use_labels,  column=0, row=8, padx=20)
-        self.uselims_button   = App.create_switch(frame, text="Use limits", command=self.use_limits,  column=0, row=9, padx=20)
-        self.fit_button       = App.create_switch(frame, text="Use fit",    command=lambda: self.open_fit_window(FitWindow), column=0, row=10, padx=20)
-        self.normalize_button = App.create_switch(frame, text="Normalize",  command=self.normalize_setup,    column=0, row=11, padx=20)
-        self.lineout_button   = App.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
-        self.FFT_button       = App.create_switch(frame, text="FFT",  command=self.fourier_trafo,    column=0, row=13, padx=20)
-        self.subfolder_button = App.create_switch(frame, text="include subfolders", command=self.load_file_list, row=16, column=0, padx=20)
+        self.multiplot_button = self.create_switch(frame, text="Multiplot",  command=self.multiplot,   column=0, row=7, padx=20, pady=(10,5))
+        self.uselabels_button = self.create_switch(frame, text="Use labels", command=self.use_labels,  column=0, row=8, padx=20)
+        self.uselims_button   = self.create_switch(frame, text="Use limits", command=self.use_limits,  column=0, row=9, padx=20)
+        self.fit_button       = self.create_switch(frame, text="Use fit",    command=lambda: self.open_fit_window(FitWindow), column=0, row=10, padx=20)
+        self.normalize_button = self.create_switch(frame, text="Normalize",  command=self.normalize_setup,    column=0, row=11, padx=20)
+        self.lineout_button   = self.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
+        self.FFT_button       = self.create_switch(frame, text="FFT",  command=self.fourier_trafo,    column=0, row=13, padx=20)
+        self.subfolder_button = self.create_switch(frame, text="include subfolders", command=self.load_file_list, row=16, column=0, padx=20)
         
         #Data Table section
-        self.data_table_button= App.create_switch(self.tabview.tab("Data Table"), text="Plot data table & custom data", command=None, row=0, column=0, padx=20)
-        self.mid_axis_button  = App.create_switch(self.tabview.tab("Data Table"), text="middle axis lines", command=None, row=1, column=0, padx=20)
-        self.yerror_area_button  = App.create_switch(self.tabview.tab("Data Table"), text="display y-error as shaded area", command=None, row=2, column=0, padx=20)
-        self.data_table       = App.create_table(self.tabview.tab("Data Table"), width=300, sticky='ns', row=3, column=0, pady=(20,10), padx=10, rowspan=11)
-        self.xval_min_entry   = App.create_entry(self.tabview.tab("Data Table"), row=0, column=3, width=90, text="x-limits", placeholder_text="x min")
-        self.xval_max_entry   = App.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=90, placeholder_text="x max")
-        self.datapoint_number_entry = App.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=90, text="length", placeholder_text="Default: 500")
-        self.function_entry   = App.create_entry(self.tabview.tab("Data Table"), row=2, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)")
+        self.data_table_button= self.create_switch(self.tabview.tab("Data Table"), text="Plot data table & custom data", command=None, row=0, column=0, padx=20)
+        self.data_table       = self.create_table(self.tabview.tab("Data Table"), width=300, sticky='ns', row=3, column=0, pady=(20,10), padx=10, rowspan=11)
+        self.xval_min_entry   = self.create_entry(self.tabview.tab("Data Table"), row=0, column=3, width=90, text="x-limits", placeholder_text="x min")
+        self.xval_max_entry   = self.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=90, placeholder_text="x max")
+        self.datapoint_number_entry = self.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=90, text="length", placeholder_text="Default: 500")
+        self.function_entry   = self.create_entry(self.tabview.tab("Data Table"), row=2, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)")
 
         self.column_dict = {}
         self.column_values = ["None", "x-values", "y-values", "x-error", "y-error"]
         for i in range(0,10):
-            self.column_dict[f'column{i}'], self.column_dict[f'column{i}_label'] = App.create_Menu(self.tabview.tab("Data Table"), column=3, row= 3+i, width=100, values=self.column_values, columnspan=2, sticky='w',textwidget=True, text=f'column {i+1}')
+            self.column_dict[f'column{i}'], self.column_dict[f'column{i}_label'] = self.create_Menu(self.tabview.tab("Data Table"), column=3, row= 3+i, width=100, values=self.column_values, columnspan=2, sticky='w',textwidget=True, text=f'column {i+1}')
         
         self.column_dict["column0"].set("x-values")
         self.column_dict["column1"].set("y-values")
 
         self.load_settings_frame()
-
-        #tooltips
-        self.tooltips = {"load_button": "Load a folder with data files\n- only files in this directory will be displayed in the list (no subfolders)\n- Standard path: Location of the Script or the .exe file\n- keybind: CTRL + O",
-                    "save_button": "Save the current image or current data\n- Image file types: .png, .jpg, .pdf\n- Data file types: .dat, .txt, .csv\n- Save images in plain format (without the axis): 'Plot settings' -> 'Save plain images'\n- image format: 'Plot settings' -> 'Canvas Size'. (maximize app window)\n- keybind: CTRL + S",
-                    "set_button":       "Open the Plot settings window\n- Top: Image Plot settings\n- Bottom Line Plot settings\n- Side: Boolean settings",
-                    "plot_button":      "Reset and reinitialize the plot \n- keybind: CTRL + R",
-                    "reset_button":     "Reset and reinitialize the plot \n- delete all previous multiplots\n- keybind: CTRL + R",
-                    "addplot_button":   "Plot the currently selected file",
-                    "prev_button":      "Plot the previous file in the list\n- keybind: CTRL + ←",
-                    "next_button":      "Plot the next file in the list\n- keybind: CTRL + →",
-                    "multiplot_button": "Create multiple plots in one figure \n- choose rows = 1, cols = 1 for single graph multiplots\n- Press CTRL+Z to delete the previous plot\n- You can click on the subplots to replot them or set the limits\n- keybind: CTRL + M",
-                    "uselabels_button": "Create x,y-labels, add a legend and title\n- Legend settings: choose location, add file name to legend",
-                    "uselims_button":   "Choose x,y-limits for line and image plots\n- x-limits stay the same when resetting the plot\n- y-limits will change to display all figures\n- the limits can be set with the sliders or typed in manually", 
-                    "fit_button":       "Fit a function to the current data set\n- initial fit parameters can be set when the fit does not converge\n- use slider to fit only parts of the function\n- the textbox can be hidden via the 'Plot settings' -> 'Hide fit params'",
-                    "normalize_button": "Normalize the plot\n- data file: normalize to max = 1 or area = 1 (Plot settings -> normalize Area)\n- image file: enhance the contrast of the image (can be changed manually: Plot settings -> pixel range)\n- keybind: CTRL + N", 
-                    "lineout_button": "Display a lineout function\n- only used for images, no multiplot possible", 
-                    "FFT_button": "Display the |FT(f)|² of the data\n- limits of the Fourier window can be set\n- zero padding (factor determines number of zeros/x-array length)\n- can only be used for line plots, Images don't work.\n- if the spectrum is given in nm, the FT will be calculated in fs",
-                    "data_table_button": "Check this to plot own custom data in the window below\n- columns must be separated by a space or tab (not comma or semicolon)\n- decimal separator: point and comma works\n- You can also plot data by using numpy functions, the argument must be called 'x'.",
-                    "ent_legend": "Add a Legend to the plot\n- Write '{name}' in the textbox if you want to add the file name to the legend.\n- The displayed file name can be customized in the legend settings.\n- You can access more data information with the following keys:\n+ {xmax},{ymax} - x,y coordinate of the maximum point\n+ {fwhm} - FWHM around the maximum point\n+ {x_res} - x-axis resolution\n- For files with multiple y-columns, the legend labels can be set by writing every label into a separate line\n- The legend for the second plot of a lineout or a FFT can be accessed with the second line of the legend entry",
-                    "ent_subplot": "Specify the number of sub plots in each multiplot window\n- Not used for plotting in a single window (rows=1, cols=1)", 
-                    "two_axis_button": "Initiate a second y-axis on the right\n- The x-axis is assumed to be the same\n- The button is reset to 'off' when a new multiplot window is created",
-                    "legend_settings_button": "- Set the location of the legend\n- Customize the display of {name} by using a sub-string of the file name", 
-                    "update_labels_button": "- Update the labels and titles\n - To update the legend, select the line by clicking on it (hide the line)",
-                    "choose_ax_button": "Choose the axis, along which the lineout point will move",
-                    "save_lineout_button": "Save the lineout into a data file",
-                    "yerror_area_button": "off: Use errorbars with caps\non: Display the y-error as a shaded area above and below the line",
-                    "mid_axis_button": "off: Use standard outside axis\non: Use middle line axis centered at (0,0)",
-                    "function_entry": "Enter a mathematical function to display, Use numpy syntax\n List of possible functions:\n- np.sin(x), np.cos(x), np.tan(x)\n- np.arcsin(x), np.arccos(x)\n- np.deg2rad(x), np.rad2deg(x)\n- np.sinh(x), np.cosh(x), np.tanh(x)\n- np.exp(x), np.log(x), np.log10(x), np.log2(x)\n- np.i0(x) - Bessel function, np.sinc(x)\n- np.sqrt(x), np.cbrt(x), np.sign(x)\n- np.heaviside(x,0)",
-                    "subfolder_button": "Display also files from any subfolder within the current directory"
-                    }
         
-        for name, description in self.tooltips.items():
+        for name, description in TOOLTIPS.items():
             setattr(self, name+"_ttp", CreateToolTip(getattr(self, name), description))
 
         for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button", "FFT_button"]:
                 getattr(self, name).configure(state="disabled")
 
         
-        # self.appearance_mode_label = App.create_label(frame, text="Appearance Mode:", row=17, column=0, padx=20, pady=(10, 0), sticky="w")
-        self.appearance_mode_optionemenu = App.create_Menu(frame, values=["Appearance: Dark","Appearance: Light", "Appearance: System"], command=self.change_appearance_mode_event, width=200, row=18, column=0, padx=20, pady=(5,10))
+        # self.appearance_mode_label = self.create_label(frame, text="Appearance Mode:", row=17, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.appearance_mode_optionemenu = self.create_Menu(frame, values=["Appearance: Dark","Appearance: Light", "Appearance: System"], command=self.change_appearance_mode_event, width=200, row=18, column=0, padx=20, pady=(5,10))
         
         #entries
-        self.folder_path = self.create_entry(column=2, row=0, text="Folder path", columnspan=2, width=600, padx=10, pady=10, sticky="w")
+        self.folder_path = self.create_entry(self, column=2, row=0, text="Folder path", columnspan=2, width=600, padx=10, pady=10, sticky="w")
         self.folder_path.bind("<KeyRelease>", self.load_file_list)
         #dropdown menu
-        self.optmenu = self.create_combobox(values=filelist, text="File name",row=1, column=2, columnspan=2, width=600, sticky="w", command=lambda x: self.determine_data_columns(x))
+        self.optmenu = self.create_combobox(self, values=filelist, text="File name",row=1, column=2, columnspan=2, width=600, sticky="w", command=lambda x: self.determine_data_columns(x))
         if not filelist == []: self.optmenu.set(filelist[0])
 
     # initialize all widgets on the settings frame
@@ -455,102 +447,293 @@ class App(customtkinter.CTk):
         self.settings_frame.grid_columnconfigure(0, minsize=60)
         self.columnconfigure(2,weight=1)
 
+        self.create_settings_controls()
+
         self.load_labels()
         self.load_multiplot()
         self.load_limits()
         self.load_lineout()
         self.load_fourier_trafo()
 
-    def create_label(self, row, column, width=20, text=None, anchor='e', sticky='e', textvariable=None, padx=(5,5), image=None, pady=None, font=None, columnspan=1, fg_color=None, **kwargs):
-        label = customtkinter.CTkLabel(self, text=text, textvariable=textvariable, width=width, image=image, anchor=anchor, font=font, fg_color=fg_color,  **kwargs)
+    def create_settings_controls(self):
+        
+        frame = customtkinter.CTkScrollableFrame(self.tabview.tab("Settings"))
+        # 3. Make the frame fill the entire tab area
+        frame.pack(padx=5, pady=5, fill="both", expand=True)
+
+        # frame = self.tabview.tab("Settings")
+        self.create_label(frame, column=1, row=0, columnspan=2, text="General settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
+        self.create_label(frame, column=1, row=4, columnspan=2, text="Image plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
+        self.create_label(frame, column=1, row=10, columnspan=2, text="Line plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
+
+        self.settings_canvas_ratio_list = self.create_Menu(frame, column=1, row=1, width=110, values=list(self.settings_canvas_ratio.keys()), text="Canvas Size", command=lambda x: self.update_canvas_size(self.settings_canvas_ratio[x]))
+        self.settings_canvas_width = self.create_entry(frame,column=2, row=1, width=70, placeholder_text="10 [cm]", sticky='w', init_val=self.canvas_width)
+        self.settings_canvas_height = self.create_entry(frame,column=3, row=1, width=70, placeholder_text="10 [cm]", sticky='w', init_val=self.canvas_height, columnspan=2)
+        self.settings_ticks_settings_list = self.create_Menu(frame, column=1, row=2, width=110, values=self.settings_ticks_settings, text="Ticks, Label settings", command=self.apply_settings, init_val=self.ticks_settings)
+        self.settings_label_settings_list = self.create_Menu(frame, column=2, row=2, width=70, values=self.settings_label_settings, command=self.apply_settings, init_val=self.label_settings)
+
+        self.settings_pixel_size = self.create_entry(frame,column=1, row=5, columnspan=2, text="Pixel size [µm]", placeholder_text="7.4 µm", sticky='w', init_val=self.pixel_size*1e3)
+        self.settings_label_dist = self.create_entry(frame,column=1, row=6, columnspan=2, text="Label step [mm]", placeholder_text="1 mm", sticky='w', init_val=self.label_dist)
+        self.settings_aspect = self.create_Menu(frame, column=1, row=7, columnspan=2, values=self.settings_aspect_values, text="Aspect",  command=self.apply_settings, init_val=self.aspect)
+        self.settings_cmap_imshow_list = self.create_Menu(frame, column=1, row=8, columnspan=2, values=self.settings_cmap_imshow, text="Colormap",command=self.apply_settings, init_val=self.cmap_imshow)
+        self.settings_clim_slider = self.create_range_slider(frame,   column=1, row=9, columnspan=2, from_=0, to=1, width=155, command= lambda value, var="settings_pixel_range_var": self.update_rangeslider_value(value, var), text="Pixel range", init_value=list(self.clim))
+
+        self.settings_plot_type_list = self.create_Menu(frame, column=1, row=11, columnspan=2, values=list(self.settings_plot_type.keys()),text="Plot type",command=self.apply_settings)
+        self.settings_linestyle_list = self.create_Menu(frame, column=1, row=12, width=110, values=list(self.settings_linestyle.keys()), text="Line style & Marker", command=self.apply_settings)
+        self.settings_marker_list = self.create_Menu(frame, column=2, row=12, width=70, values=list(self.settings_marker.keys()), command=self.apply_settings)
+        self.settings_cmap_list = self.create_Menu(frame, column=1, row=13, width=110, values=self.settings_cmap, text="Colormap", command=self.apply_settings, init_val=self.cmap)
+        self.settings_single_colors_list = self.create_Menu(frame, column=2, row=13, width=70, values=list(self.settings_single_color.keys()), command=self.apply_settings)
+        self.settings_cmap_length_list = self.create_Menu(frame, column=2, row=13, width=70, values=self.settings_cmap_length, command=self.apply_settings, init_val=self.cmap_length)
+        self.settings_grid_lines_list = self.create_Menu(frame, column=1, row=14, width=110, values=self.settings_grid_lines, text="Grid",  command=self.apply_settings, init_val=self.grid_ticks)
+        self.settings_grid_axis_list = self.create_Menu(frame, column=2, row=14, width=70, values=self.settings_grid_axis, command=self.apply_settings, init_val=self.grid_axis)
+        self.settings_normalize_list = self.create_Menu(frame, column=1, row=15, width=110, values=self.settings_normalize_function, text="Normalize",  command=self.apply_settings, init_val=self.normalize_function)
+        self.settings_normalize_value = self.create_entry(frame,column=2, row=15, width=70, columnspan=2, sticky='w', init_val=self.normalize_value)
+        self.settings_moving_av_list = self.create_Menu(frame, column=1, row=16, columnspan=2, values=self.settings_moving_average, text="Average", command=self.apply_settings, init_val=self.moving_average)
+        self.settings_linewidth_slider = self.create_slider(frame, column=1, row=17, columnspan=2, from_=0.1, to=2, width=155, command= lambda value, strvar="settings_lw_var", var="linewidth": self.update_slider_value(value, strvar, var), text="line width", number_of_steps=19, init_val=self.linewidth)
+        self.settings_alpha_slider = self.create_slider(frame, column=1, row=18, columnspan=2, from_=0, to=1, width=155, command= lambda value, strvar="settings_alpha_var", var="alpha": self.update_slider_value(value, strvar, var), text="line alpha", number_of_steps=20, init_val=self.alpha)
+
+        self.settings_reset_button = self.create_button(frame, column=4, row=0, text="Reset Settings", command=self.reset_values, width=130, pady=(20,5))
+        self.settings_minor_ticks_button = self.create_switch(frame, column=4, row=2, text="Use Minor Ticks", command=lambda: (self.toggle_boolean(self.use_minor_ticks),self.apply_settings(None)))
+        self.settings_convert_pixels_button = self.create_switch(frame, column=4, row=5, text="Convert Pixels", command=lambda: self.toggle_boolean(self.convert_pixels))
+        self.settings_scale_switch_button = self.create_switch(frame, column=4, row=6, text="Use Scalebar", command=lambda: self.toggle_boolean(self.use_scalebar))
+        self.settings_cbar_switch_button = self.create_switch(frame, column=4, row=7, text="Use Colorbar", command=lambda: self.toggle_boolean(self.use_colorbar))
+        self.settings_convert_rgb_button = self.create_switch(frame, column=4, row=8, text="Convert RGB to gray", command=lambda: self.toggle_boolean(self.convert_rgb_to_gray))
+        self.settings_save_plain_img_button = self.create_switch(frame, column=4, row=9, text="Save plain images", command=lambda: self.toggle_boolean(self.save_plain_image))
+        self.settings_hide_params_button = self.create_switch(frame, column=4, row=11, text="Hide fit params", command=lambda: (self.toggle_boolean(self.display_fit_params_in_plot), self.apply_settings(None)))
+        self.settings_show_FWHM_button = self.create_switch(frame, column=4, row=12, text="Draw FWHM line", command=lambda: self.toggle_boolean(self.draw_FWHM_line))
+        self.settings_grid_lines_button = self.create_switch(frame, column=4, row=13, text="Use Grid", command=lambda: (self.toggle_boolean(self.use_grid_lines), self.apply_settings(None)))
+        self.mid_axis_button  = self.create_switch(frame, column=4, row=14, text="middle axis lines", command=None)
+        self.yerror_area_button  = self.create_switch(frame, column=4, row=15, text="display y-error as shaded area", command=None)
+
+        self.settings_canvas_width.bind("<KeyRelease>", lambda event: (self.apply_settings(None), self.update_canvas_size(self.canvas_ratio)))
+        self.settings_canvas_height.bind("<KeyRelease>", lambda event: (self.apply_settings(None), self.update_canvas_size(self.canvas_ratio)))
+
+        self.settings_cmap_length_list.configure(state="disabled")
+        self.settings_single_colors_list.grid_remove()
+        self.settings_canvas_height.grid_remove()
+
+        self.settings_pixel_range_var = customtkinter.StringVar()
+        self.settings_lw_var = customtkinter.StringVar()
+        self.settings_alpha_var = customtkinter.StringVar()
+        self.create_label(frame, textvariable=self.settings_pixel_range_var, column=2, row=9, width=30, anchor='e', sticky='e')
+        self.create_label(frame, textvariable=self.settings_lw_var, column=2, row=17, width=30, anchor='e', sticky='e')
+        self.create_label(frame, textvariable=self.settings_alpha_var, column=2, row=18, width=30, anchor='e', sticky='e')
+        frame.grid_columnconfigure(3, minsize=30)
+
+        self.settings_canvas_width.bind("<KeyRelease>", self.apply_settings)
+        self.settings_canvas_height.bind("<KeyRelease>", self.apply_settings)
+        self.settings_pixel_size.bind("<KeyRelease>", self.apply_settings)
+        self.settings_label_dist.bind("<KeyRelease>", self.apply_settings)
+        self.settings_normalize_value.bind("<KeyRelease>", self.apply_settings)
+
+        # self.init_values()
+
+    def reset_values(self):
+        self.canvas_width = 17
+        self.pixel_size = 7.4e-3
+        self.label_dist = 1
+        self.normalize_value = 1
+        self.settings_ticks_settings_list.set(self.settings_ticks_settings[0])
+        self.settings_label_settings_list.set(self.settings_label_settings[0])
+        self.settings_canvas_width.reinsert(0,str(self.canvas_width))
+        self.settings_pixel_size.reinsert(0,str(self.pixel_size*1e3))
+        self.settings_label_dist.reinsert(0,str(self.label_dist))
+        self.settings_normalize_value.reinsert(0,str(1))
+        self.settings_aspect.set(next(iter(self.settings_aspect_values)))
+        self.settings_cmap_imshow_list.set(self.settings_cmap_imshow[0])
+
+        self.settings_canvas_ratio_list.set(next(iter(self.settings_canvas_ratio)))
+        self.settings_linestyle_list.set(next(iter(self.settings_linestyle)))
+        self.settings_marker_list.set(next(iter(self.settings_marker)))
+        self.settings_cmap_list.set(self.settings_cmap[0])
+        self.settings_single_colors_list.set(next(iter(self.settings_single_color)))
+        self.settings_grid_lines_button.deselect()
+        self.settings_grid_lines_list.set(self.settings_grid_lines[0])
+        self.settings_grid_axis_list.set(self.settings_grid_axis[0])
+        self.settings_moving_av_list.set(str(self.settings_moving_average[0]))
+        self.settings_cmap_length_list.set(str(self.settings_cmap_length[1]))
+        self.settings_plot_type_list.set(next(iter(self.settings_plot_type)))
+        self.settings_normalize_list.set(self.settings_normalize_function[0])
+
+        self.settings_clim_slider.set([0,1])
+        self.settings_linewidth_slider.set(1)
+        self.settings_alpha_slider.set(1)
+        self.update_rangeslider_value((0,1), "settings_pixel_range_var")
+        self.update_slider_value(1, "settings_lw_var", "linewidth")
+        self.update_slider_value(1, "settings_alpha_var", "alpha")
+
+    def update_slider_value(self, value, strvar_name, var_name):
+        variable = getattr(self, strvar_name)
+        variable.set(str(round(value,2)))
+
+        setattr(self, var_name, value)
+        self.update_plot(None)
+
+    def update_rangeslider_value(self, value, var_name):
+        variable = getattr(self, var_name)
+        value = tuple(round(x, 1) for x in value)
+        variable.set(f"{value[0],value[1]}")
+        self.apply_settings(None)
+
+    def apply_settings(self, val):
+        try:
+            self.canvas_width=float(self.settings_canvas_width.get())
+            self.canvas_height=float(self.settings_canvas_height.get())
+            self.pixel_size=float(self.settings_pixel_size.get())*1e-3
+            self.label_dist=float(self.settings_label_dist.get())
+        except: pass 
+        self.normalize_value=float(self.settings_normalize_value.get())
+        self.aspect=self.settings_aspect.get()
+        self.cmap_imshow=self.settings_cmap_imshow_list.get()
+        self.clim=tuple(self.settings_clim_slider.get())
+
+        self.label_settings = self.settings_label_settings_list.get()
+        self.ticks_settings = self.settings_ticks_settings_list.get()
+        self.linestyle=self.settings_linestyle[self.settings_linestyle_list.get()]
+        self.markers=self.settings_marker[self.settings_marker_list.get()]
+        self.cmap=self.settings_cmap_list.get()
+        self.linewidth=self.settings_linewidth_slider.get()
+        self.alpha=self.settings_alpha_slider.get()
+        self.moving_average = int(self.settings_moving_av_list.get())
+        self.grid_ticks = self.settings_grid_lines_list.get()
+        self.grid_axis = self.settings_grid_axis_list.get()
+        self.plot_type=self.settings_plot_type[self.settings_plot_type_list.get()]
+        self.cmap_length = int(self.settings_cmap_length_list.get())
+        self.single_color = self.settings_single_color[self.settings_single_colors_list.get()]
+        self.normalize_function = self.settings_normalize_list.get()
+
+        if self.settings_cmap_list.get() in sequential_colormaps:
+            self.settings_cmap_length_list.configure(state="enabled")
+        else: 
+            self.settings_cmap_length_list.configure(state="disabled")
+
+        if self.settings_cmap_list.get() == 'CUSTOM':
+            self.settings_cmap_length_list.grid_remove()
+            self.settings_single_colors_list.grid()
+        else: 
+            self.settings_single_colors_list.grid_remove()
+            self.settings_cmap_length_list.grid()
+
+        if val == None and hasattr(self, 'image'): 
+            self.image.set_clim(self.clim)
+            if self.lineout_button.get():
+                self.update_lineout_aspect()
+            self.canvas.draw()
+
+        self.plot_axis_parameters("ax1", plot_counter=self.plot_counter)
+        self.update_plot(None)
+
+    def update_canvas_size(self, canvas_ratio):
+        if self.canvas_width <= 2 or self.canvas_height <= 2: return
+        self.canvas_ratio = canvas_ratio
+        self.canvas_widget.pack_forget()
+
+        self.settings_canvas_height.grid() if self.canvas_ratio == 0 else self.settings_canvas_height.grid_remove()
+
+        if self.canvas_ratio is not None:
+            width = self.canvas_width/2.54
+            height = self.canvas_height/2.54 if self.canvas_ratio == 0 else self.canvas_width/(self.canvas_ratio*2.54)
+            self.fig.set_size_inches(width, height)
+            self.canvas_widget.pack(expand=True, fill=None) 
+            self.canvas_widget.config(width=self.fig.get_size_inches()[0] * self.fig.dpi, height=self.fig.get_size_inches()[1] * self.fig.dpi)
+        else:
+            width = (self.tabview.winfo_width() - 18) / self.fig.dpi
+            height = (self.tabview.winfo_height()) / self.fig.dpi
+            self.fig.set_size_inches(w=width, h=height, forward=True)
+            self.canvas_widget.pack(fill="both", expand=True) 
+
+        self.canvas.draw()
+
+    def create_label(self, parent, row, column, width=20, text=None, anchor='e', sticky='e', textvariable=None, padx=(5,5), image=None, pady=None, font=None, columnspan=1, fg_color=None, **kwargs):
+        label = customtkinter.CTkLabel(parent, text=text, textvariable=textvariable, width=width, image=image, anchor=anchor, font=font, fg_color=fg_color,  **kwargs)
         label.grid(row=row, column=column, sticky=sticky, columnspan=columnspan, padx=padx, pady=pady, **kwargs)
         return label
 
-    def create_entry(self, row, column, width=200, height=28, text=None, columnspan=1, rowspan=1, padx=10, pady=5, placeholder_text=None, sticky='w', sticky_label='e', textwidget=False, init_val=None, **kwargs):
-        entry = CustomEntry(self, width, height, placeholder_text=placeholder_text, **kwargs)
+    def create_entry(self, parent, row, column, width=200, height=28, text=None, columnspan=1, rowspan=1, padx=10, pady=5, placeholder_text=None, sticky='w', sticky_label='e', textwidget=False, init_val=None, **kwargs):
+        entry = CustomEntry(parent, width, height, placeholder_text=placeholder_text, **kwargs)
         entry.grid(row=row, column=column, columnspan=columnspan, rowspan=rowspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if init_val is not None:
             entry.insert(0,str(init_val))
         if text is not None:
-            entry_label = App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e', sticky=sticky_label)
+            entry_label = self.create_label(parent, text=text, column=column-1, row=row, width=20, anchor='e', sticky=sticky_label)
             if textwidget == True:
                 return (entry, entry_label)
 
         return entry
 
-    def create_button(self, command, row, column, text=None, image=None, width=200, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
-        button = customtkinter.CTkButton(self, text=text, command=command, width=width, image=image, **kwargs)
-        button.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
-        return button
-    
-    def create_segmented_button(self, values, command, row, column, width=200, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
-        button = customtkinter.CTkSegmentedButton(self, values=values, command=command, width=width, **kwargs)
+    def create_button(self, parent, command, row, column, text=None, image=None, width=200, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
+        button = customtkinter.CTkButton(parent, text=text, command=command, width=width, image=image, **kwargs)
         button.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         return button
 
-    def create_switch(self, command, row, column, text, columnspan=1, padx=10, pady=5, sticky='w', **kwargs):
-        switch = customtkinter.CTkSwitch(self, text=text, command=command, **kwargs)
+    def create_segmented_button(self, parent, values, command, row, column, width=200, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
+        button = customtkinter.CTkSegmentedButton(parent, values=values, command=command, width=width, **kwargs)
+        button.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
+        return button
+
+    def create_switch(self, parent, command, row, column, text, columnspan=1, padx=10, pady=5, sticky='w', **kwargs):
+        switch = customtkinter.CTkSwitch(parent, text=text, command=command, **kwargs)
         switch.grid(row=row, column=column, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         return switch
-    
-    def create_combobox(self, values, column, row, width=200, state='readonly', command=None, text=None, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
-        combobox = customtkinter.CTkComboBox(self, values=values, command=command, state=state, width=width, **kwargs)
+
+    def create_combobox(self, parent, values, column, row, width=200, state='readonly', command=None, text=None, columnspan=1, padx=10, pady=5, sticky=None, **kwargs):
+        combobox = customtkinter.CTkComboBox(parent, values=values, command=command, state=state, width=width, **kwargs)
         combobox.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if text is not None:
-            App.create_label(self, text=text, column=column-1, row=row, width=80, anchor='e',pady=pady)
+            self.create_label(parent, text=text, column=column-1, row=row, width=80, anchor='e', pady=pady)
         return combobox
-    
-    def create_Menu(self, values, column, row, command=None, text=None, width=200, columnspan=1, padx=10, pady=5, sticky=None, textwidget=False, init_val=None, **kwargs):
-        optionmenu = customtkinter.CTkOptionMenu(self, values=values, width=width, command=command, **kwargs)
+
+    def create_Menu(self, parent, values, column, row, command=None, text=None, width=200, columnspan=1, padx=10, pady=5, sticky=None, textwidget=False, init_val=None, **kwargs):
+        optionmenu = customtkinter.CTkOptionMenu(parent, values=values, width=width, command=command, **kwargs)
         optionmenu.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if init_val is not None:
             optionmenu.set(init_val)
         if text is not None:
-            optionmenu_label = App.create_label(self, text=text, column=column-1, row=row, anchor='e', pady=pady)
+            optionmenu_label = self.create_label(parent, text=text, column=column-1, row=row, anchor='e', pady=pady)
             if textwidget == True:
                 return (optionmenu, optionmenu_label)
 
         return optionmenu
     
-    def create_slider(self, from_, to, row, column, width=200, text=None, init_val=None, command=None, columnspan=1, number_of_steps=1000, padx = 10, pady=5, sticky='w', textwidget=False,**kwargs):
-        slider = customtkinter.CTkSlider(self, from_=from_, to=to, width=width, command=command, number_of_steps=number_of_steps)
+    def create_slider(self, parent, from_, to, row, column, width=200, text=None, init_val=None, command=None, columnspan=1, number_of_steps=1000, padx = 10, pady=5, sticky='w', textwidget=False,**kwargs):
+        slider = customtkinter.CTkSlider(parent, from_=from_, to=to, width=width, command=command, number_of_steps=number_of_steps)
         slider.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if init_val is not None:
             slider.set(init_val)
         if text is not None:
-            slider_label = App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e')
+            slider_label = self.create_label(parent, text=text, column=column-1, row=row, width=20, anchor='e')
             if textwidget == True:
                 return (slider, slider_label)
 
         return slider
     
-    def create_range_slider(self, from_, to, row, column, width=200, text=None, init_value=None, command=None, columnspan=1, number_of_steps=None, padx = 10, pady=5, sticky='w', textwidget=False,**kwargs):
-        slider = CTkRangeSlider(self, from_=from_, to=to, width=width, command=command, number_of_steps=number_of_steps)
+    def create_range_slider(self, parent, from_, to, row, column, width=200, text=None, init_value=None, command=None, columnspan=1, number_of_steps=None, padx = 10, pady=5, sticky='w', textwidget=False,**kwargs):
+        slider = CTkRangeSlider(parent, from_=from_, to=to, width=width, command=command, number_of_steps=number_of_steps)
         slider.grid(column=column, row=row, columnspan=columnspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if init_value is not None:
             slider.set(init_value)
         if text is not None:
-            slider_label = App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e')
+            slider_label = self.create_label(parent, text=text, column=column-1, row=row, width=20, anchor='e')
             if textwidget == True:
                 return (slider, slider_label)
 
         return slider
     
-    def create_table(self,  width, row, column, sticky=None, rowspan=1, **kwargs):
-        text_widget = customtkinter.CTkTextbox(self, width = width, padx=10, pady=5)
+    def create_table(self, parent, width, row, column, sticky=None, rowspan=1, **kwargs):
+        text_widget = customtkinter.CTkTextbox(parent, width = width, padx=10, pady=5)
         # text_widget.pack(fill="y", expand=True)
         text_widget.grid(row=row, column=column, sticky=sticky, rowspan=rowspan, **kwargs)
-        self.grid_rowconfigure(row+rowspan-1, weight=1)
+        parent.grid_rowconfigure(row+rowspan-1, weight=1)
 
         return text_widget
     
-    def create_textbox(self, row, column, width=200, height=28, text=None, columnspan=1, rowspan=1, padx=10, pady=5, sticky='w', sticky_label='e', textwidget=False, init_val=None, **kwargs):
-        textbox = customtkinter.CTkTextbox(self, width, height, **kwargs)
+    def create_textbox(self, parent, row, column, width=200, height=28, text=None, columnspan=1, rowspan=1, padx=10, pady=5, sticky='w', sticky_label='e', textwidget=False, init_val=None, **kwargs):
+        textbox = customtkinter.CTkTextbox(parent, width, height, **kwargs)
         textbox.grid(row=row, column=column, columnspan=columnspan, rowspan=rowspan, padx=padx, pady=pady, sticky=sticky, **kwargs)
         if init_val is not None:
             textbox.insert(0,str(init_val))
         if text is not None:
-            textbox_label = App.create_label(self, text=text, column=column-1, row=row, width=20, anchor='e', sticky=sticky_label)
+            textbox_label = self.create_label(parent, text=text, column=column-1, row=row, width=20, anchor='e', sticky=sticky_label)
             if textwidget == True:
                 return (textbox, textbox_label)
 
@@ -1315,18 +1498,18 @@ class App(customtkinter.CTk):
 
     def load_limits(self):
         row = 4 # 4 from the use_labels
-        self.limits_title = App.create_label(self.settings_frame, text="Limits", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
-        self.labx = App.create_label(self.settings_frame, text="x limit", column=0, row=row+1)
-        self.laby = App.create_label(self.settings_frame, text="y limit", column=0, row=row+2)
+        self.limits_title = self.create_label(self.settings_frame, text="Limits", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.labx = self.create_label(self.settings_frame, text="x limit", column=0, row=row+1)
+        self.laby = self.create_label(self.settings_frame, text="y limit", column=0, row=row+2)
 
         for i, (lim_lbox, lim_rbox, lim_slider) in enumerate(zip(["xlim_lbox", "ylim_lbox"], # lim_box - entries
                                                                  ["xlim_rbox", "ylim_rbox"],
                                                                  ["xlim_slider", "ylim_slider"])): # lim_slider - slider 
 
             # create the entry objects "self.xlim_lbox" ...
-            setattr(self, lim_lbox, App.create_entry(self.settings_frame, row=row+i+1, column=1, width=50))
-            setattr(self, lim_rbox, App.create_entry(self.settings_frame, row=row+i+1, column=4, width=50))
-            setattr(self, lim_slider, App.create_range_slider(self.settings_frame, from_=0, to=1, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), columnspan=2, init_value=[0,1]))
+            setattr(self, lim_lbox, self.create_entry(self.settings_frame, row=row+i+1, column=1, width=50))
+            setattr(self, lim_rbox, self.create_entry(self.settings_frame, row=row+i+1, column=4, width=50))
+            setattr(self, lim_slider, self.create_range_slider(self.settings_frame, from_=0, to=1, command= lambda val=None: self.update_plot(val), row=row+i+1, column =2, width=120, padx=(0,0), columnspan=2, init_value=[0,1]))
 
             # get the name of the created object, first the entry, second the slider
             entryl_widget = getattr(self,lim_lbox)
@@ -1379,13 +1562,13 @@ class App(customtkinter.CTk):
 
     def load_labels(self):
         row = 0
-        self.labels_title = App.create_label(self.settings_frame, text="Labels", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
-        self.ent_ylabel   = App.create_entry(self.settings_frame,column=3, row=row+1, columnspan=2, width=110, placeholder_text="y label")
-        self.ent_xlabel, self.ent_label_text   = App.create_entry(self.settings_frame,column=1, row=row+1, columnspan=2, width=110, placeholder_text="x label", text="x / y", textwidget=True)
-        self.ent_legend, self.ent_legend_text  = App.create_textbox(self.settings_frame,column=1, row=row+2, columnspan=4, rowspan=2, width=110,text="Legend", textwidget=True)
-        self.ent_title, self.ent_title_text  = App.create_entry(self.settings_frame,column=1, row=row+3, columnspan=4, width=110, placeholder_text="title",text="Title", textwidget=True)
-        self.legend_settings_button = App.create_button(self.settings_frame, text="Settings", command=lambda: self.open_toplevel(LegendWindow, "Legend Settings"), column=3, row=row+2, columnspan=2, image=self.img_settings, width=110, sticky='w')
-        self.update_labels_button = App.create_button(self.settings_frame, text="Update", command=self.update_labels, column=3, row=row+3, columnspan=2, image=self.img_reset, width=110, sticky='w')
+        self.labels_title = self.create_label(self.settings_frame, text="Labels", font=customtkinter.CTkFont(size=16, weight="bold"), row=row, column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.ent_ylabel   = self.create_entry(self.settings_frame,column=3, row=row+1, columnspan=2, width=110, placeholder_text="y label")
+        self.ent_xlabel, self.ent_label_text   = self.create_entry(self.settings_frame,column=1, row=row+1, columnspan=2, width=110, placeholder_text="x label", text="x / y", textwidget=True)
+        self.ent_legend, self.ent_legend_text  = self.create_textbox(self.settings_frame,column=1, row=row+2, columnspan=4, rowspan=2, width=110,text="Legend", textwidget=True)
+        self.ent_title, self.ent_title_text  = self.create_entry(self.settings_frame,column=1, row=row+3, columnspan=4, width=110, placeholder_text="title",text="Title", textwidget=True)
+        self.legend_settings_button = self.create_button(self.settings_frame, text="Settings", command=lambda: self.open_toplevel(LegendWindow, "Legend Settings"), column=3, row=row+2, columnspan=2, image=self.img_settings, width=110, sticky='w')
+        self.update_labels_button = self.create_button(self.settings_frame, text="Update", command=self.update_labels, column=3, row=row+3, columnspan=2, image=self.img_reset, width=110, sticky='w')
         self.ent_legend.configure(border_width=2)
         self.use_labels()
         
@@ -1434,11 +1617,11 @@ class App(customtkinter.CTk):
     
     def load_multiplot(self):
         row = self.multiplot_row
-        self.multiplot_title = App.create_label( self.settings_frame,column=0, row=row, text="Multiplot Grid", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-        self.ent_rows, self.ent_rows_text = App.create_entry( self.settings_frame,column=1, row=row+1, width=50, text="rows", textwidget=True)
-        self.ent_cols, self.ent_cols_text = App.create_entry( self.settings_frame,column=3, row=row+1, width=50, text="columns", textwidget=True, columnspan=3, padx=(10,70))
-        self.ent_subplot, self.ent_subplot_text = App.create_entry( self.settings_frame,column=1, row=row+2, width=50, text="subplots", textwidget=True)
-        self.two_axis_button = App.create_switch(self.settings_frame, command=None, text="2nd axis", column=2, row=self.multiplot_row+2, columnspan=3, padx=20, pady=(10,5))
+        self.multiplot_title = self.create_label( self.settings_frame,column=0, row=row, text="Multiplot Grid", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.ent_rows, self.ent_rows_text = self.create_entry( self.settings_frame,column=1, row=row+1, width=50, text="rows", textwidget=True)
+        self.ent_cols, self.ent_cols_text = self.create_entry( self.settings_frame,column=3, row=row+1, width=50, text="columns", textwidget=True, columnspan=3, padx=(10,70))
+        self.ent_subplot, self.ent_subplot_text = self.create_entry( self.settings_frame,column=1, row=row+2, width=50, text="subplots", textwidget=True)
+        self.two_axis_button = self.create_switch(self.settings_frame, command=None, text="2nd axis", column=2, row=self.multiplot_row+2, columnspan=3, padx=20, pady=(10,5))
         self.multiplot()
         
     def multiplot(self):
@@ -1476,13 +1659,13 @@ class App(customtkinter.CTk):
             
     def load_lineout(self):
         row = 12
-        self.lineout_title    = App.create_label( self.settings_frame, column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-        self.choose_ax_button = App.create_Menu(self.settings_frame, column=4, row=row+2, values=[" x ", " y "], command=self.initialize_lineout, columnspan=2, width=60, padx=(0,10), sticky="w", init_val=" y ")
-        self.save_lineout_button = App.create_button(self.settings_frame, column=4, row=row+1, image=self.img_save, command= lambda: self.save_data_file(self.lineout_data), width=60, padx=(0,10))
-        self.angle_slider     = App.create_slider(self.settings_frame, from_=-90, to=90, command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=120, padx=(0,0), columnspan=2, number_of_steps=180)
-        self.line_slider      = App.create_slider(self.settings_frame, from_=0, to=1, command= lambda val=None: self.plot_lineout(val), row=row+2, column =2, width=120, padx=(0,0), columnspan=2)
-        self.line_entry, self.ent_line_text = App.create_entry(self.settings_frame, row=row+2, column=1, width=50, text="line", textwidget=True)
-        self.angle_entry, self.ent_angle_text = App.create_entry(self.settings_frame, row=row+1, column=1, width=50, text="angle", textwidget=True)
+        self.lineout_title    = self.create_label( self.settings_frame, column=0, row=row, text="Lineout", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.choose_ax_button = self.create_Menu(self.settings_frame, column=4, row=row+2, values=[" x ", " y "], command=self.initialize_lineout, columnspan=2, width=60, padx=(0,10), sticky="w", init_val=" y ")
+        self.save_lineout_button = self.create_button(self.settings_frame, column=4, row=row+1, image=self.img_save, command= lambda: self.save_data_file(self.lineout_data), width=60, padx=(0,10))
+        self.angle_slider     = self.create_slider(self.settings_frame, from_=-90, to=90, command= lambda val=None: self.plot_lineout(val), row=row+1, column =2, width=120, padx=(0,0), columnspan=2, number_of_steps=180)
+        self.line_slider      = self.create_slider(self.settings_frame, from_=0, to=1, command= lambda val=None: self.plot_lineout(val), row=row+2, column =2, width=120, padx=(0,0), columnspan=2)
+        self.line_entry, self.ent_line_text = self.create_entry(self.settings_frame, row=row+2, column=1, width=50, text="line", textwidget=True)
+        self.angle_entry, self.ent_angle_text = self.create_entry(self.settings_frame, row=row+1, column=1, width=50, text="angle", textwidget=True)
         self.angle_entry.insert(0,str(0))
         self.lineout()
 
@@ -1618,11 +1801,11 @@ class App(customtkinter.CTk):
         
     def load_fourier_trafo(self):
         row = 15
-        self.FFT_title    = App.create_label( self.settings_frame,column=0, row=row, text="Fourier Transform", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-        self.save_FFT_button = App.create_button(self.settings_frame, column = 3, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
-        self.padd_zeros_textval  = App.create_label( self.settings_frame,column=1, columnspan=2, row=row+1, text=str(0), sticky="n", anchor="n", fg_color="transparent")
-        self.padd_zeros_slider, self.padd_zeros_label = App.create_slider(self.settings_frame, from_=0, to=10, command= self.update_FFT, row=row+1, column=1, columnspan=2, init_val=0, number_of_steps=10, width=120, text="padd 0's", padx=(10,0), textwidget=True)
-        self.FFT_borders_slider, self.FFT_borders_label = App.create_range_slider(self.settings_frame, from_=0, to=1, command= self.update_FFT, row=row+2, column =1, width=120, columnspan=2, text="FFT lims", padx=(10,0), textwidget=True)
+        self.FFT_title    = self.create_label( self.settings_frame,column=0, row=row, text="Fourier Transform", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.save_FFT_button = self.create_button(self.settings_frame, column = 3, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
+        self.padd_zeros_textval  = self.create_label( self.settings_frame,column=1, columnspan=2, row=row+1, text=str(0), sticky="n", anchor="n", fg_color="transparent")
+        self.padd_zeros_slider, self.padd_zeros_label = self.create_slider(self.settings_frame, from_=0, to=10, command= self.update_FFT, row=row+1, column=1, columnspan=2, init_val=0, number_of_steps=10, width=120, text="padd 0's", padx=(10,0), textwidget=True)
+        self.FFT_borders_slider, self.FFT_borders_label = self.create_range_slider(self.settings_frame, from_=0, to=1, command= self.update_FFT, row=row+2, column =1, width=120, columnspan=2, text="FFT lims", padx=(10,0), textwidget=True)
         self.fourier_trafo()
             
     def fourier_trafo(self):
@@ -1895,7 +2078,7 @@ class App(customtkinter.CTk):
 
     # Closing the application       
     def on_closing(self):
-        for name, description in self.tooltips.items():
+        for name, description in TOOLTIPS.items():
             tooltip = getattr(self, name+"_ttp")
             tooltip.cleanup()
 
@@ -1971,284 +2154,6 @@ class App(customtkinter.CTk):
             if a: a.set_visible(visibility)
 
         return ax_line
-"""
-############################################################################################
-##############################    Settings Window    #######################################
-############################################################################################
-
-"""
-
-class SettingsWindow(customtkinter.CTkToplevel): 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.geometry("600x730")
-        self.title("Plot Settings")
-        self.app = app
-
-        # general values
-        self.canvas_ratio = {'Auto': None, 'Custom': 0,'4:3 ratio': 4/3, '16:9 ratio': 16/9, '3:2 ratio': 3/2, '3:1 ratio': 3,'2:1 ratio': 2, '1:1 ratio': 1, '1:2 ratio': 0.5}
-        self.ticks_settings = ["smart", "smart + tight", "default", "no ticks"]
-        self.label_settings = ["smart", "default"]
-        # values for image plots
-        self.cmap_imshow = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper']
-        self.aspect_values = ['equal', 'auto']
-        
-        # values for line plots
-        self.linestyle = {'solid': '-', 'dashed': '--', 'dotted': ':', 'dashdotted': '-.', 'no line': ''}
-        self.markers = {'none':'', 'point':'.', 'circle':'o', 'pixel':',', '∇': 'v', 'Δ': '^', 'x': 'x', '◆': 'D'}
-        self.grid_lines = ['major','minor','both']
-        self.grid_axis = ['both', 'x', 'y']
-        self.cmap = ['tab10', 'tab20', 'tab20b','tab20c', 'Pastel1', 'Pastel2', 'Paired', 'Accent', 'Dark2', 'Set1', 'Set2', 'Set3', 'CUSTOM']
-        self.cmap.extend(sequential_colormaps)
-        self.moving_average = ['1','2','4','6','8','10','16']
-        self.cmap_length = ['5','10','15','20','25','30','35','40']
-        self.single_colors = {'blue':'tab:blue','orange':'tab:orange','green':'tab:green','red':'tab:red','purple':'tab:purple','brown':'tab:brown','pink':'tab:pink','gray':'tab:gray','olive':'tab:olive','cyan':'tab:cyan'}
-        self.plot_type = {'Linear': 'errorbar', 'Semi Logarithmic x': 'semilogx', 'Semi Logarithmic y': 'semilogy', 'Log-Log plot': 'loglog'}
-        self.normalize_function = ['Maximum', 'Area', 'Only Factor']
-
-        App.create_label(self, column=1, row=0, columnspan=2, text="General settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
-        App.create_label(self, column=1, row=4, columnspan=2, text="Image plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
-        App.create_label(self, column=1, row=10, columnspan=2, text="Line plot settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
-
-        # general values 
-        self.canvas_ratio_list   = App.create_Menu(self, column=1, row=1, width=110, values=list(self.canvas_ratio.keys()), text="Canvas Size", command=lambda x: self.update_canvas_size(self.canvas_ratio[x]))
-        self.canvas_width        = App.create_entry(self,column=2, row=1, width=70, placeholder_text="10 [cm]", sticky='w', init_val=self.app.canvas_width)
-        self.canvas_height       = App.create_entry(self,column=3, row=1, width=70, placeholder_text="10 [cm]", sticky='w', init_val=self.app.canvas_height, columnspan=2)
-        self.ticks_settings_list = App.create_Menu(self, column=1, row=2, width=110, values=self.ticks_settings, text="Ticks, Label settings", command=self.apply_settings, init_val=self.app.ticks_settings)
-        self.label_settings_list = App.create_Menu(self, column=2, row=2, width=70, values=self.label_settings, command=self.apply_settings, init_val=self.app.label_settings)
-
-        # values for image plots
-        self.pixel_size         = App.create_entry(self,column=1, row=5, columnspan=2, text="Pixel size [µm]", placeholder_text="7.4 µm", sticky='w', init_val=self.app.pixel_size*1e3)
-        self.label_dist         = App.create_entry(self,column=1, row=6, columnspan=2, text="Label step [mm]", placeholder_text="1 mm", sticky='w', init_val=self.app.label_dist)
-        self.aspect             = App.create_Menu(self, column=1, row=7, columnspan=2, values=self.aspect_values, text="Aspect",  command=self.apply_settings, init_val=self.app.aspect)
-        self.cmap_imshow_list   = App.create_Menu(self, column=1, row=8, columnspan=2, values=self.cmap_imshow, text="Colormap",command=self.apply_settings, init_val=self.app.cmap_imshow)
-        self.clim_slider     = App.create_range_slider(  self,   column=1, row=9, columnspan=2, from_=0, to=1, width=155,
-                                                    command= lambda value, var="pixel_range_var": self.update_rangeslider_value(value, var), text="Pixel range", init_value=list(self.app.clim))
-
-        # values for line plots
-        self.plot_type_list     = App.create_Menu(self, column=1, row=11, columnspan=2, values=list(self.plot_type.keys()),text="Plot type",command=self.apply_settings)
-        self.linestyle_list     = App.create_Menu(self, column=1, row=12, width=110, values=list(self.linestyle.keys()), text="Line style & Marker", command=self.apply_settings)
-        self.marker_list        = App.create_Menu(self, column=2, row=12, width=70, values=list(self.markers.keys()),     command=self.apply_settings)
-        self.cmap_list          = App.create_Menu(self, column=1, row=13, width=110, values=self.cmap, text="Colormap", command=self.apply_settings, init_val=self.app.cmap)
-        self.single_colors_list = App.create_Menu(self, column=2, row=13, width=70, values=list(self.single_colors.keys()), command=self.apply_settings)
-        self.cmap_length_list   = App.create_Menu(self, column=2, row=13, width=70, values=self.cmap_length, command=self.apply_settings, init_val=self.app.cmap_length)
-        self.grid_lines_list    = App.create_Menu(self, column=1, row=14, width=110, values=self.grid_lines, text="Grid",  command=self.apply_settings, init_val=self.app.grid_ticks)
-        self.grid_axis_list     = App.create_Menu(self, column=2, row=14, width=70, values=self.grid_axis, command=self.apply_settings, init_val=self.app.grid_axis)
-        self.normalize_list     = App.create_Menu(self, column=1, row=15, width=110, values=self.normalize_function, text="Normalize",  command=self.apply_settings, init_val=self.app.normalize_function)
-        self.normalize_value    = App.create_entry(self,column=2, row=15, width=70, columnspan=2, sticky='w', init_val=self.app.normalize_value)
-        self.moving_av_list     = App.create_Menu(self, column=1, row=16, columnspan=2, values=self.moving_average, text="Average", command=self.apply_settings, init_val=self.app.moving_average)
-        self.linewidth_slider   = App.create_slider(    self, column=1, row=17, columnspan=2, from_=0.1, to=2, width=155,
-                                                    command= lambda value, strvar="lw_var", var="linewidth": self.update_slider_value(value, strvar, var), text="line width", number_of_steps=19, init_val=self.app.linewidth)
-        self.alpha_slider       = App.create_slider(    self, column=1, row=18, columnspan=2, from_=0, to=1, width=155,
-                                                    command= lambda value, strvar="alpha_var", var="alpha": self.update_slider_value(value, strvar, var), text="line alpha", number_of_steps=20, init_val=self.app.alpha)
-
-        self.reset_button           = App.create_button(self, column=4, row=0, text="Reset Settings",   command=self.reset_values, width=130, pady=(20,5))
-        self.minor_ticks_button     = App.create_switch(self, column=4, row=2, text="Use Minor Ticks",  command=lambda: (self.toggle_boolean(self.app.use_minor_ticks),self.apply_settings(None)))
-        self.convert_pixels_button  = App.create_switch(self, column=4, row=5, text="Convert Pixels",   command=lambda: self.toggle_boolean(self.app.convert_pixels))
-        self.scale_switch_button    = App.create_switch(self, column=4, row=6, text="Use Scalebar",     command=lambda: self.toggle_boolean(self.app.use_scalebar))
-        self.cbar_switch_button     = App.create_switch(self, column=4, row=7, text="Use Colorbar",     command=lambda: self.toggle_boolean(self.app.use_colorbar))
-        self.convert_rgb_button     = App.create_switch(self, column=4, row=8, text="Convert RGB to gray",command=lambda: self.toggle_boolean(self.app.convert_rgb_to_gray))
-        self.save_plain_img_button  = App.create_switch(self, column=4, row=9, text="Save plain images",command=lambda: self.toggle_boolean(self.app.save_plain_image))
-        self.hide_params_button     = App.create_switch(self, column=4, row=11, text="Hide fit params",  command=lambda: (self.toggle_boolean(self.app.display_fit_params_in_plot), self.apply_settings(None)))
-        self.show_FWHM_button       = App.create_switch(self, column=4, row=12, text="Draw FWHM line", command=lambda: self.toggle_boolean(self.app.draw_FWHM_line))
-        self.grid_lines_button      = App.create_switch(self, column=4, row=13, text="Use Grid",         command=lambda: (self.toggle_boolean(self.app.use_grid_lines), self.apply_settings(None)))
-        
-        self.canvas_width.bind("<KeyRelease>", lambda event: (self.apply_settings(None), self.update_canvas_size(self.app.canvas_ratio)))
-        self.canvas_height.bind("<KeyRelease>", lambda event: (self.apply_settings(None), self.update_canvas_size(self.app.canvas_ratio)))
-
-        self.cmap_length_list.configure(state="disabled")
-        self.single_colors_list.grid_remove()
-        self.canvas_height.grid_remove()
-        #tooltips
-        self.tooltips = {"canvas_ratio_list":"Determine the size of the canvas. This is useful for saving the plots in a reproducible manner\n- Auto: Resize the canvas to fill the full screen (standard)\n- Custom: Enter the width and height manually using the two entry boxes on the right\n- 4:3 ratio: Set the size of the canvas in 4:3 format, the width [cm] can be set with the entry box on the right",
-                    "canvas_width":     "Set the width of the canvas in cm.\n- Works only, if Canvas Size is not set to 'Auto'",
-                    "pixel_size":       "Set the size of a single pixel\n- the tick labels can be converted to real lengths by checking 'Convert Pixels'.",
-                    "label_dist":       "Set, at which points a new label is placed", 
-                    "aspect":           "Set the aspect of the image\n- 'equal' - original image aspect, no pixel distortion\n- 'auto' - fill the image to the size of the window, produces image distortion.",
-                    "cmap_imshow_list": "Choose between different colormaps", 
-                    "clim_slider":   "Enhance the contrast of the images by selecting the pixel range\n- Uncheck 'Normalize' for manual setting",
-                    "plot_type_list":   "Choose between different plotting scales\n- Normal: plt.plot(...)\n- Semi Logarithmic x: plt.semilogx(...)\n- Semi Logarithmic y: plt.semilogy(...)\n- Log-Log plot: plt.loglog(...)",
-                    "linestyle_list":   "Choose different line styles for the plot.",
-                    "marker_list":      "Determine, if every data point is highlighted with a marker. Different marker shapes can be chosen.", 
-                    "cmap_list":        "Choose between different color cycles for multiplots. We differentiate between qualtitative and sequential colormaps:\n- Qualitative Cmap: We cycle through a list of predefined colors of specific length\n- CUSTOM: Use a single color. The color can be chosen by the dropdown menu on the right\n- Sequential Cmap: We create a list of colors based on a continuous colormap. The number of colors can be set by the dropdown menu on the right",
-                    "grid_lines_list":  "Check 'Use Grid'\n- Decide between showing major (and minor) grid lines.",
-                    "grid_axis_list":  "Check 'Use Grid'\n- Decide between showing only x- oder y-grid lines",
-                    "moving_av_list":   "Perform a moving average between neighbouring points to smooth the data.\n- set the number of neighbouring points\n- n = 1: no moving average\n- n=2: left and right neighbouring point",
-                    "linewidth_slider": "Choose the line width", 
-                    "convert_pixels_button": "Convert the integer pixel labels to lengths in [mm] by stating the 'pixel size'", 
-                    "scale_switch_button": "Show a scalebar in the bottom right corner.\n- Scale determined by 'pixel size'\n- Recommendation: use this setting together with 'hide ticks'",
-                    "cbar_switch_button": "Show a colorbar on the right to attribute the color to the numeric 'gray-value' between 0 and 1.", 
-                    "save_plain_img_button": "When saving a figure with 'Save Figure', only the picture will be saved in the raw format.\nNote: The colormap and current size of the image will be saved.",
-                    "hide_params_button": "When using a fit function, the textbox with the fit parameters in the plot will be hidden.",
-                    "normalize_list": "Only for line plots:\n- Maximum: Normalize to a maximum value of 1\n- Area: Normalize to area of 1\n- Only Factor: Do not normalize, just multiply the data with the factor", 
-                    "normalize_value": "Multiplicative factor to the y-data",
-                    "grid_lines_button": "Use Gridlines"
-                    }
-        
-        for name, description in self.tooltips.items():
-            setattr(self, name+"_ttp", CreateToolTip(getattr(self, name), description))
-
-        # Slider labels    
-        self.pixel_range_var = customtkinter.StringVar()  # StringVar to hold the label value
-        self.lw_var = customtkinter.StringVar()  # StringVar to hold the label value
-        self.alpha_var = customtkinter.StringVar()  # StringVar to hold the label value
-        App.create_label(self, textvariable=self.pixel_range_var, column=2, row=9, width=30, anchor='e', sticky='e')
-        App.create_label(self, textvariable=self.lw_var, column=2, row=17, width=30, anchor='e', sticky='e')
-        App.create_label(self, textvariable=self.alpha_var, column=2, row=18, width=30, anchor='e', sticky='e')
-        self.grid_columnconfigure(3, minsize=30)
-        
-        self.canvas_width.bind("<KeyRelease>", self.apply_settings)
-        self.canvas_height.bind("<KeyRelease>", self.apply_settings)
-        self.pixel_size.bind("<KeyRelease>", self.apply_settings)
-        self.label_dist.bind("<KeyRelease>", self.apply_settings)
-        self.normalize_value.bind("<KeyRelease>", self.apply_settings)
-
-        #set initial values
-        self.init_values()
-        
-    # initiate current values
-    def init_values(self):
-        # too long to put in the definition of the lists
-        self.canvas_ratio_list.set(list(self.canvas_ratio.keys())[list(self.canvas_ratio.values()).index(self.app.canvas_ratio)])
-        self.linestyle_list.set(list(self.linestyle.keys())[list(self.linestyle.values()).index(self.app.linestyle)])
-        self.marker_list.set(list(self.markers.keys())[list(self.markers.values()).index(self.app.markers)])
-        self.plot_type_list.set(list(self.plot_type.keys())[list(self.plot_type.values()).index(self.app.plot_type)])
-        self.single_colors_list.set(list(self.single_colors.keys())[list(self.single_colors.values()).index(self.app.single_color)])
-        self.update_rangeslider_value(list(self.app.clim), "pixel_range_var")
-        self.update_slider_value(self.app.linewidth, "lw_var", "linewidth")
-        self.update_slider_value(self.app.alpha, "alpha_var", "alpha")
-
-        if self.app.use_scalebar.get(): self.scale_switch_button.select()
-        if self.app.use_colorbar.get(): self.cbar_switch_button.select()
-        if self.app.convert_pixels.get(): self.convert_pixels_button.select()
-        if not self.app.display_fit_params_in_plot.get(): self.hide_params_button.select()
-        if self.app.convert_rgb_to_gray.get(): self.convert_rgb_button.select()
-        if self.app.save_plain_image.get(): self.save_plain_img_button.select()
-        if self.app.use_grid_lines.get(): self.grid_lines_button.select()
-        if self.app.use_minor_ticks.get(): self.minor_ticks_button.select()
-        if self.app.draw_FWHM_line.get(): self.show_FWHM_button.select()
-
-    # reset to default values
-    def reset_values(self):
-        # Here we define the standard values!!!
-        self.app.canvas_width = 17
-        self.app.pixel_size = 7.4e-3
-        self.app.label_dist = 1
-        self.app.normalize_value = 1
-        self.ticks_settings_list.set(self.ticks_settings[0])
-        self.label_settings_list.set(self.label_settings[0])
-        self.canvas_width.reinsert(0,str(self.app.canvas_width))
-        self.pixel_size.reinsert(0,str(self.app.pixel_size*1e3))
-        self.label_dist.reinsert(0,str(self.app.label_dist))
-        self.normalize_value.reinsert(0,str(1))
-        self.aspect.set(next(iter(self.aspect_values)))
-        self.cmap_imshow_list.set(self.cmap_imshow[0])
-
-        self.canvas_ratio_list.set(next(iter(self.canvas_ratio)))
-        self.linestyle_list.set(next(iter(self.linestyle)))
-        self.marker_list.set(next(iter(self.markers)))
-        self.cmap_list.set(self.cmap[0])
-        self.single_colors_list.set(next(iter(self.single_colors)))
-        self.grid_lines_button.deselect()
-        self.grid_lines_list.set(self.grid_lines[0])
-        self.grid_axis_list.set(self.grid_axis[0])
-        self.moving_av_list.set(str(self.moving_average[0]))
-        self.cmap_length_list.set(str(self.cmap_length[1]))
-        self.plot_type_list.set(next(iter(self.plot_type)))
-        self.normalize_list.set(self.normalize_function[0])
-
-        self.clim_slider.set([0,1])
-        self.linewidth_slider.set(1) # before next line!
-        self.alpha_slider.set(1) # before next line!
-        self.update_rangeslider_value((0,1), "pixel_range_var")
-        self.update_slider_value(1, "lw_var", "linewidth")
-        self.update_slider_value(1, "alpha_var", "alpha")
-          
-    def update_slider_value(self, value, strvar_name, var_name):
-        variable = getattr(self, strvar_name)
-        variable.set(str(round(value,2)))
-
-        setattr(self.app, var_name, value)
-        self.app.update_plot(None)
-
-    def update_rangeslider_value(self, value, var_name):
-        variable = getattr(self, var_name)
-        # (x1, x2) = value
-        value = tuple(round(x, 1) for x in value)
-        variable.set(f"{value[0],value[1]}")
-        self.apply_settings(None)
-        
-    def apply_settings(self, val):
-        try:
-            self.app.canvas_width=float(self.canvas_width.get())
-            self.app.canvas_height=float(self.canvas_height.get())
-            self.app.pixel_size=float(self.pixel_size.get())*1e-3
-            self.app.label_dist=float(self.label_dist.get())
-        except: pass 
-        self.app.normalize_value=float(self.normalize_value.get())
-        self.app.aspect=self.aspect.get()
-        self.app.cmap_imshow=self.cmap_imshow_list.get()
-        self.app.clim=tuple(self.clim_slider.get())
-
-        self.app.label_settings = self.label_settings_list.get()
-        self.app.ticks_settings = self.ticks_settings_list.get()
-        self.app.linestyle=self.linestyle[self.linestyle_list.get()]
-        self.app.markers=self.markers[self.marker_list.get()]
-        self.app.cmap=self.cmap_list.get()
-        self.app.linewidth=self.linewidth_slider.get()
-        self.app.alpha=self.alpha_slider.get()
-        self.app.moving_average = int(self.moving_av_list.get())
-        self.app.grid_ticks = self.grid_lines_list.get()
-        self.app.grid_axis = self.grid_axis_list.get()
-        self.app.plot_type=self.plot_type[self.plot_type_list.get()]
-        self.app.cmap_length = int(self.cmap_length_list.get())
-        self.app.single_color = self.single_colors[self.single_colors_list.get()]
-        self.app.normalize_function = self.normalize_list.get()
-
-        if self.cmap_list.get() in sequential_colormaps:
-            self.cmap_length_list.configure(state="enabled")
-        else: 
-            self.cmap_length_list.configure(state="disabled")
-
-        if self.cmap_list.get() == 'CUSTOM':
-            self.cmap_length_list.grid_remove()
-            self.single_colors_list.grid()
-        else: 
-            self.single_colors_list.grid_remove()
-            self.cmap_length_list.grid()
-
-        if val == None and hasattr(self.app, 'image'): 
-            self.app.image.set_clim(self.app.clim)
-            if self.app.lineout_button.get():
-                self.app.update_lineout_aspect()
-            self.app.canvas.draw()
-        
-        self.app.plot_axis_parameters("ax1", plot_counter=self.app.plot_counter)
-        self.app.update_plot(None)
-
-    def toggle_boolean(self, boolean):
-        boolean.set(not boolean.get())
-
-    def update_canvas_size(self, canvas_ratio):
-        if self.app.canvas_width <= 2 or self.app.canvas_height <= 2: return
-        self.app.canvas_ratio = canvas_ratio
-        self.app.canvas_widget.pack_forget()
-
-        self.canvas_height.grid() if self.app.canvas_ratio == 0 else self.canvas_height.grid_remove()
-
-        if self.app.canvas_ratio is not None:
-            width = self.app.canvas_width/2.54
-            height = self.app.canvas_height/2.54 if self.app.canvas_ratio == 0 else self.app.canvas_width/(self.app.canvas_ratio*2.54)
-            self.app.fig.set_size_inches(width, height)
-            self.app.canvas_widget.pack(expand=True, fill=None) 
-            self.app.canvas_widget.config(width=self.app.fig.get_size_inches()[0] * self.app.fig.dpi, height=self.app.fig.get_size_inches()[1] * self.app.fig.dpi)
-        else:
-            width = (self.app.tabview.winfo_width() - 18) / self.app.fig.dpi
-            height = (self.app.tabview.winfo_height()) / self.app.fig.dpi
-            self.app.fig.set_size_inches(w=width, h=height, forward=True)  # Re-enable dynamic resizing
-            self.app.canvas_widget.pack(fill="both", expand=True) 
-
-        self.app.canvas.draw()  # Redraw canvas to apply the automatic size
 
 """
 ############################################################################################
@@ -2279,23 +2184,23 @@ class LegendWindow(customtkinter.CTkToplevel):
 
         self.grid_columnconfigure(0, minsize=120)
         self.grid_columnconfigure(3, minsize=30)
-        App.create_label(self, column=1, row=0, columnspan=2, text="Legend Settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
+        self.app.create_label(self, column=1, row=0, columnspan=2, text="Legend Settings", font=customtkinter.CTkFont(size=16, weight="bold"),padx=20, pady=(20, 5), sticky=None)
 
         # values for line plots
-        self.reset_button       = App.create_button(self, column=4, row=1, text="Reset Settings",   command=self.reset_values, width=130)
-        self.legend_type_list   = App.create_Menu(self, column=1, row=1, columnspan=2, values=list(self.legend_type.keys()), text="Legend location", command=self.apply_settings)
-        self.legend_name_list   = App.create_Menu(self, column=1, row=2, columnspan=2, values=list(self.legend_name.keys()), text="Legend: {name}", command=self.apply_settings)
+        self.reset_button       = self.app.create_button(self, column=4, row=1, text="Reset Settings",   command=self.reset_values, width=130)
+        self.legend_type_list   = self.app.create_Menu(self, column=1, row=1, columnspan=2, values=list(self.legend_type.keys()), text="Legend location", command=self.apply_settings)
+        self.legend_name_list   = self.app.create_Menu(self, column=1, row=2, columnspan=2, values=list(self.legend_name.keys()), text="Legend: {name}", command=self.apply_settings)
         self.slice_var = customtkinter.StringVar()  # StringVar to hold the label value
         self.fontsize_var = customtkinter.StringVar()  # StringVar to hold the label value
-        App.create_label(self, textvariable=self.slice_var, column=1, row=5, width=50, columnspan=3, sticky="w", padx=10)
-        App.create_label(self, textvariable=self.fontsize_var, column=2, row=3, width=30, sticky="e")
+        self.app.create_label(self, textvariable=self.slice_var, column=1, row=5, width=50, columnspan=3, sticky="w", padx=10)
+        self.app.create_label(self, textvariable=self.fontsize_var, column=2, row=3, width=30, sticky="e")
 
-        self.name_slice_slider  = App.create_range_slider(self, from_=0, to=len(self.app.optmenu.get()), text="slice file name", command= lambda value, var="slice_var": self.update_slider_value(value, var), row=4, column =1, width=200, columnspan=2, init_value=[0, len(self.app.optmenu.get())])
-        self.fontsize_slider   = App.create_slider(    self, column=1, row=3, columnspan=2, from_=5, to=20, 
+        self.name_slice_slider  = self.app.create_range_slider(self, from_=0, to=len(self.app.optmenu.get()), text="slice file name", command= lambda value, var="slice_var": self.update_slider_value(value, var), row=4, column =1, width=200, columnspan=2, init_value=[0, len(self.app.optmenu.get())])
+        self.fontsize_slider   = self.app.create_slider(    self, column=1, row=3, columnspan=2, from_=5, to=20, 
                                                     command= lambda value, var="fontsize_var": self.update_fontsize_value(value, var), text="font size", width=160, number_of_steps=15, init_val=self.app.legend_font_size)
 
-        self.update_labels_button  = App.create_switch(self, column=4, row=2, text="Update labels",   command=lambda: self.toggle_boolean(self.app.update_labels_multiplot))
-        self.show_title_entry_button  = App.create_switch(self, column=4, row=3, text="Show title entry",   command=lambda: (self.toggle_boolean(self.app.show_title_entry), self.app.use_labels()))
+        self.update_labels_button  = self.app.create_switch(self, column=4, row=2, text="Update labels",   command=lambda: self.toggle_boolean(self.app.update_labels_multiplot))
+        self.show_title_entry_button  = self.app.create_switch(self, column=4, row=3, text="Show title entry",   command=lambda: (self.toggle_boolean(self.app.show_title_entry), self.app.use_labels()))
         #set initial values
         self.init_values()
         
@@ -2356,10 +2261,10 @@ class FitWindow(customtkinter.CTkFrame):
         self.row = 20
         self.widget_dict = {}
         self.fitted_label_string = ""
-        self.labels_title = App.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row , column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.labels_title = self.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row , column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
         self.function = {'Gaussian': gauss, 'Gaussian 3rd': gauss3, 'Lorentz': lorentz, 'Linear': linear, 'Quadratic': quadratic, 'Exponential': exponential, 'Logarithmic': logarithm ,'Square Root': sqrt, 'Hyperbola': hyperbola}
 
-        self.function_label = App.create_label(app.settings_frame, text="", column=1, row=self.row +1, width=80, columnspan=4, anchor='e', sticky="w", pady=(0,10))
+        self.function_label = self.create_label(app.settings_frame, text="", column=1, row=self.row +1, width=80, columnspan=4, anchor='e', sticky="w", pady=(0,10))
         self.function_label_list = {'Gaussian': ["f(x) = a·exp(-2(x-b)²/c²) + d", r"f(x) = a \cdot \exp\left(-2\,\dfrac{(x-b)^2}{c^2}\right) + d"], 
                                     'Gaussian 3rd': ["f(x) = a·exp(-2|x-b|³/c²) + d", r"f(x) = a \cdot \exp\left(-2\,\dfrac{|x-b|^3}{c^2}\right) + d"], 
                                     'Lorentz': ["f(x) = a²/[(x²-b²)² + c²·b²]+d", r"f(x) = \dfrac{a^2}{(x^2 - b^2)^2 + c^2 \cdot b^2}+d"],
@@ -2370,8 +2275,8 @@ class FitWindow(customtkinter.CTkFrame):
                                     'Square Root': ["f(x) = a·sqrt(b·x) + c", r"f(x) = a\sqrt{b\cdot x} + c"],
                                     'Hyperbola': ["f(x) = a/(x-b) + c", r"f(x) = \dfrac{a}{x-b} + c"]
                                     }
-        self.function_list_label = App.create_label(app.settings_frame,text="Fit", column=0,row=self.row +2, sticky="e")
-        self.function_list = App.create_Menu(app.settings_frame, values=list(self.function.keys()), command=self.create_params, width=110, column=1, row=self.row +2, columnspan=2, sticky="w")
+        self.function_list_label = self.create_label(app.settings_frame,text="Fit", column=0,row=self.row +2, sticky="e")
+        self.function_list = self.create_Menu(app.settings_frame, values=list(self.function.keys()), command=self.create_params, width=110, column=1, row=self.row +2, columnspan=2, sticky="w")
         self.function_list.set('Gaussian')
 
         if app.lineout_button.get():
@@ -2379,10 +2284,10 @@ class FitWindow(customtkinter.CTkFrame):
         else:
             self.data = app.data
 
-        self.save_fit_button = App.create_button(app.settings_frame, column = 3, row=self.row+2, text="Save fit", command= lambda: app.save_data_file(np.vstack([self.data[:,0], app.fit_plot(app.function, app.params, self.data)]).T), width=110, columnspan=2)
+        self.save_fit_button = self.create_button(app.settings_frame, column = 3, row=self.row+2, text="Save fit", command= lambda: app.save_data_file(np.vstack([self.data[:,0], app.fit_plot(app.function, app.params, self.data)]).T), width=110, columnspan=2)
         if (not app.image_plot or app.lineout_button.get()):
-            self.fit_borders_slider = App.create_range_slider(app.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= lambda val=None: app.update_plot(val), row=self.row+3, column =1, width=180, padx=(10,10), columnspan=4, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])])
-            self.fit_borders_label = App.create_label(app.settings_frame, row=self.row+3, column=0, text="borders")
+            self.fit_borders_slider = self.create_range_slider(app.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= lambda val=None: app.update_plot(val), row=self.row+3, column =1, width=180, padx=(10,10), columnspan=4, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])])
+            self.fit_borders_label = self.create_label(app.settings_frame, row=self.row+3, column=0, text="borders")
 
         self.params = []
         self.error = []
@@ -2443,9 +2348,9 @@ class FitWindow(customtkinter.CTkFrame):
     
     # Create Fit parameter widget, its name label widget and a string Variable to hold the label vlue
     def create_widget(self, name, arg_number):
-        self.widget_dict[f'fit_{name}'], self.widget_dict[f'fitlabel_{name}'] = App.create_entry(app.settings_frame, column=1, row=self.row + arg_number + 4, width=80, placeholder_text="0", sticky='w', columnspan=2, text=name, textwidget=True)
+        self.widget_dict[f'fit_{name}'], self.widget_dict[f'fitlabel_{name}'] = self.create_entry(app.settings_frame, column=1, row=self.row + arg_number + 4, width=80, placeholder_text="0", sticky='w', columnspan=2, text=name, textwidget=True)
         self.widget_dict[f'str_var_{name}'] = customtkinter.StringVar() # StringVar to hold the label value
-        self.widget_dict[f'fitted_{name}'] = App.create_label(app.settings_frame, textvariable=self.widget_dict[f'str_var_{name}'], column=3, width=50, row=self.row + arg_number + 4, padx=(0, 20), columnspan=2)
+        self.widget_dict[f'fitted_{name}'] = self.create_label(app.settings_frame, textvariable=self.widget_dict[f'str_var_{name}'], column=3, width=50, row=self.row + arg_number + 4, padx=(0, 20), columnspan=2)
     
     # Write the fitted parameter values in the labels
     def set_fitted_values(self, params, error):
@@ -2501,27 +2406,6 @@ class FitWindow(customtkinter.CTkFrame):
         [getattr(self, name).grid_remove() for name in widget_names]
         self.app.use_fit = app.fit_button.get()
 
-'''
-############################################################################################
-##############################     Table  Window     #######################################
-############################################################################################
-'''
-# class Table(customtkinter.CTkScrollableFrame):
-#     def __init__(self, master, data, **kwargs):
-#         super().__init__(master, **kwargs)
-
-#         self.columns = ("x", "y")
-#         self.data = data
-
-#         self.text_widget = customtkinter.CTkTextbox(self, padx=10, pady=5)
-#         self.text_widget.grid(row=0, column=0, sticky="nsew")
-#         self.grid_columnconfigure(0, weight=1)
-        
-#         self.text_widget.insert("1.0", "\t".join(self.columns) + "\n")
-
-#         for row in self.data:
-#             # self.insert_data(row)
-#             self.text_widget.insert("end", "\t".join(map(str, row)) + "\n")
 
 class CreateToolTip(object):
     """

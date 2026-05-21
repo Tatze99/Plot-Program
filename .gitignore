@@ -5,6 +5,7 @@ untitled1.py
 *.pyc
 *.dat
 
+.vscode/
 .venv/
 venv/
 output/**
@@ -12,3 +13,4 @@ auto-py-to-exe.json
 
 !ui_images/**
 !documentation_images/**
+!test_data/**
