@@ -2261,10 +2261,10 @@ class FitWindow(customtkinter.CTkFrame):
         self.row = 20
         self.widget_dict = {}
         self.fitted_label_string = ""
-        self.labels_title = self.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row , column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.labels_title = self.app.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row , column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
         self.function = {'Gaussian': gauss, 'Gaussian 3rd': gauss3, 'Lorentz': lorentz, 'Linear': linear, 'Quadratic': quadratic, 'Exponential': exponential, 'Logarithmic': logarithm ,'Square Root': sqrt, 'Hyperbola': hyperbola}
 
-        self.function_label = self.create_label(app.settings_frame, text="", column=1, row=self.row +1, width=80, columnspan=4, anchor='e', sticky="w", pady=(0,10))
+        self.function_label = self.app.create_label(app.settings_frame, text="", column=1, row=self.row +1, width=80, columnspan=4, anchor='e', sticky="w", pady=(0,10))
         self.function_label_list = {'Gaussian': ["f(x) = a·exp(-2(x-b)²/c²) + d", r"f(x) = a \cdot \exp\left(-2\,\dfrac{(x-b)^2}{c^2}\right) + d"], 
                                     'Gaussian 3rd': ["f(x) = a·exp(-2|x-b|³/c²) + d", r"f(x) = a \cdot \exp\left(-2\,\dfrac{|x-b|^3}{c^2}\right) + d"], 
                                     'Lorentz': ["f(x) = a²/[(x²-b²)² + c²·b²]+d", r"f(x) = \dfrac{a^2}{(x^2 - b^2)^2 + c^2 \cdot b^2}+d"],
@@ -2275,8 +2275,8 @@ class FitWindow(customtkinter.CTkFrame):
                                     'Square Root': ["f(x) = a·sqrt(b·x) + c", r"f(x) = a\sqrt{b\cdot x} + c"],
                                     'Hyperbola': ["f(x) = a/(x-b) + c", r"f(x) = \dfrac{a}{x-b} + c"]
                                     }
-        self.function_list_label = self.create_label(app.settings_frame,text="Fit", column=0,row=self.row +2, sticky="e")
-        self.function_list = self.create_Menu(app.settings_frame, values=list(self.function.keys()), command=self.create_params, width=110, column=1, row=self.row +2, columnspan=2, sticky="w")
+        self.function_list_label = self.app.create_label(app.settings_frame,text="Fit", column=0,row=self.row +2, sticky="e")
+        self.function_list = self.app.create_Menu(app.settings_frame, values=list(self.function.keys()), command=self.create_params, width=110, column=1, row=self.row +2, columnspan=2, sticky="w")
         self.function_list.set('Gaussian')
 
         if app.lineout_button.get():
@@ -2284,10 +2284,10 @@ class FitWindow(customtkinter.CTkFrame):
         else:
             self.data = app.data
 
-        self.save_fit_button = self.create_button(app.settings_frame, column = 3, row=self.row+2, text="Save fit", command= lambda: app.save_data_file(np.vstack([self.data[:,0], app.fit_plot(app.function, app.params, self.data)]).T), width=110, columnspan=2)
+        self.save_fit_button = self.app.create_button(app.settings_frame, column = 3, row=self.row+2, text="Save fit", command= lambda: app.save_data_file(np.vstack([self.data[:,0], app.fit_plot(app.function, app.params, self.data)]).T), width=110, columnspan=2)
         if (not app.image_plot or app.lineout_button.get()):
-            self.fit_borders_slider = self.create_range_slider(app.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= lambda val=None: app.update_plot(val), row=self.row+3, column =1, width=180, padx=(10,10), columnspan=4, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])])
-            self.fit_borders_label = self.create_label(app.settings_frame, row=self.row+3, column=0, text="borders")
+            self.fit_borders_slider = self.app.create_range_slider(app.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= lambda val=None: app.update_plot(val), row=self.row+3, column =1, width=180, padx=(10,10), columnspan=4, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])])
+            self.fit_borders_label = self.app.create_label(app.settings_frame, row=self.row+3, column=0, text="borders")
 
         self.params = []
         self.error = []
@@ -2348,9 +2348,9 @@ class FitWindow(customtkinter.CTkFrame):
     
     # Create Fit parameter widget, its name label widget and a string Variable to hold the label vlue
     def create_widget(self, name, arg_number):
-        self.widget_dict[f'fit_{name}'], self.widget_dict[f'fitlabel_{name}'] = self.create_entry(app.settings_frame, column=1, row=self.row + arg_number + 4, width=80, placeholder_text="0", sticky='w', columnspan=2, text=name, textwidget=True)
+        self.widget_dict[f'fit_{name}'], self.widget_dict[f'fitlabel_{name}'] = self.app.create_entry(app.settings_frame, column=1, row=self.row + arg_number + 4, width=80, placeholder_text="0", sticky='w', columnspan=2, text=name, textwidget=True)
         self.widget_dict[f'str_var_{name}'] = customtkinter.StringVar() # StringVar to hold the label value
-        self.widget_dict[f'fitted_{name}'] = self.create_label(app.settings_frame, textvariable=self.widget_dict[f'str_var_{name}'], column=3, width=50, row=self.row + arg_number + 4, padx=(0, 20), columnspan=2)
+        self.widget_dict[f'fitted_{name}'] = self.app.create_label(app.settings_frame, textvariable=self.widget_dict[f'str_var_{name}'], column=3, width=50, row=self.row + arg_number + 4, padx=(0, 20), columnspan=2)
     
     # Write the fitted parameter values in the labels
     def set_fitted_values(self, params, error):
