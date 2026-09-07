@@ -32,13 +32,13 @@ import json
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-tooltips_enabled = True
+tooltips_enabled = False
 
 def toggle_bool(event=None):
     global tooltips_enabled
     tooltips_enabled = not tooltips_enabled
 
-version_number = "26/05"
+version_number = "26/09"
 Standard_path = os.path.dirname(os.path.abspath(__file__))
 
 with open(os.path.join(Standard_path, "tooltips.json"), "r", encoding="utf-8") as file:
@@ -239,7 +239,7 @@ def determine_delimiter_and_column_count(file_path, skip_row):
                 else:
                     delimiter = d
         
-
+        print(target_line, delimiters, delimiter)
         return delimiter, max_columns
 
 def format_number(val):
@@ -348,7 +348,7 @@ class App(customtkinter.CTk):
         self.mouse_clicked_on_canvas = False
 
         # settings tab options
-        self.settings_canvas_ratio = {'Auto': None, 'Custom': 0,'4:3 ratio': 4/3, '16:9 ratio': 16/9, '3:2 ratio': 3/2, '3:1 ratio': 3,'2:1 ratio': 2, '1:1 ratio': 1, '1:2 ratio': 0.5}
+        self.settings_canvas_ratio = {'Auto': None, 'Adaptive (img.)': -1, 'Custom': 0,'4:3 ratio': 4/3, '16:9 ratio': 16/9, '3:2 ratio': 3/2, '3:1 ratio': 3,'2:1 ratio': 2, '1:1 ratio': 1, '1:2 ratio': 0.5}
         self.settings_ticks_settings = ["smart", "smart + tight", "default", "no ticks"]
         self.settings_label_settings = ["smart", "default"]
         self.settings_aspect_values = ['equal', 'auto']
@@ -403,11 +403,11 @@ class App(customtkinter.CTk):
         self.normalize_button = self.create_switch(frame, text="Normalize",  command=self.normalize_setup,    column=0, row=11, padx=20)
         self.lineout_button   = self.create_switch(frame, text="Lineout",  command=self.lineout,    column=0, row=12, padx=20)
         self.FFT_button       = self.create_switch(frame, text="FFT",  command=self.fourier_trafo,    column=0, row=13, padx=20)
-        self.subfolder_button = self.create_switch(frame, text="include subfolders", command=self.load_file_list, row=16, column=0, padx=20)
+        self.create_label(frame, text="Press F1 to activate tooltips", row=16, column=0, sticky="w", padx=20)
         
         #Data Table section
         self.data_table_button= self.create_switch(self.tabview.tab("Data Table"), text="Plot data table & custom data", command=None, row=0, column=0, padx=20)
-        self.data_table       = self.create_table(self.tabview.tab("Data Table"), width=300, sticky='ns', row=3, column=0, pady=(20,10), padx=10, rowspan=11)
+        self.data_table       = self.create_table(self.tabview.tab("Data Table"), width=300, sticky='ns', row=1, column=0, pady=(20,10), padx=10, rowspan=13)
         self.xval_min_entry   = self.create_entry(self.tabview.tab("Data Table"), row=0, column=3, width=90, text="x-limits", placeholder_text="x min")
         self.xval_max_entry   = self.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=90, placeholder_text="x max")
         self.datapoint_number_entry = self.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=90, text="length", placeholder_text="Default: 500")
@@ -493,6 +493,7 @@ class App(customtkinter.CTk):
         self.settings_alpha_slider = self.create_slider(frame, column=1, row=18, columnspan=2, from_=0, to=1, width=155, command= lambda value, strvar="settings_alpha_var", var="alpha": self.update_slider_value(value, strvar, var), text="line alpha", number_of_steps=20, init_val=self.alpha)
 
         self.settings_reset_button = self.create_button(frame, column=4, row=0, text="Reset Settings", command=self.reset_values, width=130, pady=(20,5))
+        self.subfolder_button = self.create_switch(frame, column=4, row=1, text="include subfolders in path", command=self.load_file_list)
         self.settings_minor_ticks_button = self.create_switch(frame, column=4, row=2, text="Use Minor Ticks", command=lambda: (self.toggle_boolean(self.use_minor_ticks),self.apply_settings(None)))
         self.settings_convert_pixels_button = self.create_switch(frame, column=4, row=5, text="Convert Pixels", command=lambda: self.toggle_boolean(self.convert_pixels))
         self.settings_scale_switch_button = self.create_switch(frame, column=4, row=6, text="Use Scalebar", command=lambda: self.toggle_boolean(self.use_scalebar))
@@ -629,6 +630,9 @@ class App(customtkinter.CTk):
         self.canvas_widget.pack_forget()
 
         self.settings_canvas_height.grid() if self.canvas_ratio == 0 else self.settings_canvas_height.grid_remove()
+
+        if self.canvas_ratio == -1:
+            self.canvas_ratio = self.ax1.get_window_extent().width/self.ax1.get_window_extent().height if self.image_plot else None
 
         if self.canvas_ratio is not None:
             width = self.canvas_width/2.54
@@ -1060,11 +1064,6 @@ class App(customtkinter.CTk):
         if self.data.ndim == 1:
             self.data = np.vstack((range(len(self.data)), self.data)).T
 
-        # Display data in the data table
-        self.data_table.delete("0.0", "end")  # delete all text
-
-        for row in self.data:
-            self.data_table.insert("end", " \t ".join(format_number(val) for i, val in enumerate(row)) + "\n")
 
             
         data = getattr(self,dat)
@@ -1132,6 +1131,17 @@ class App(customtkinter.CTk):
             self.plot_order.append(ax)
             self.plot_counter += 1
 
+        # Display data in the data table
+        self.data_table.delete("0.0", "end")  # delete all text
+
+        table_data_list = []
+        if xerr is not None:
+            table_data_list.append(xerr)
+        if yerr is not None:
+            table_data_list.append(yerr)
+        table_data = np.column_stack((x_data, *y_data_list, *table_data_list))
+        for row in table_data:
+            self.data_table.insert("end", " \t ".join(format_number(val) for i, val in enumerate(row)) + "\n")
 
         axis.tick_params(which='both', direction='in')
         axis.set_yscale('log' if self.plot_type in ["semilogy", "loglog"] else 'linear')
