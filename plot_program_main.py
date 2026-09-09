@@ -30,7 +30,7 @@ import logging
 import json
 
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
-ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+# ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 tooltips_enabled = False
 
@@ -57,7 +57,7 @@ file_type_names = ('.csv', '.dat', '.txt', '.png', '.jpg', '.jpeg', '.spec', '.J
 image_type_names = ('png','.jpg', '.jpeg', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm')
 sequential_colormaps = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper','Purples', 'Blues', 'Greens', 'Oranges', 'Reds','twilight', 'hsv', 'rainbow', 'jet', 'turbo', 'gnuplot', 'brg']
 
-ctypes.windll.shcore.SetProcessDpiAwareness(1)
+# ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
 TEST_PATH = os.path.join(Standard_path, "test_data")    
 filelist = natsorted([fname for fname in os.listdir(TEST_PATH) if fname.endswith(file_type_names)])
@@ -88,6 +88,12 @@ def logarithm(x, a, b, c):
 
 def hyperbola(x, a, b, c):
     return a / (x-b) + c
+
+def log_absolute(x):
+    return np.log(np.abs(x))
+
+def identity(x):
+    return x
 
 def moving_average(x, window_size):
     """
@@ -364,6 +370,7 @@ class App(customtkinter.CTk):
         self.settings_single_color = {'blue':'tab:blue','orange':'tab:orange','green':'tab:green','red':'tab:red','purple':'tab:purple','brown':'tab:brown','pink':'tab:pink','gray':'tab:gray','olive':'tab:olive','cyan':'tab:cyan'}
         self.settings_plot_type = {'Linear': 'errorbar', 'Semi Logarithmic x': 'semilogx', 'Semi Logarithmic y': 'semilogy', 'Log-Log plot': 'loglog'}
         self.settings_normalize_function = ['Maximum', 'Area', 'Only Factor']
+        self.settings_apply_y_function = {'None': identity, 'sine': np.sin, 'cosine': np.cos, 'tangent': np.tan, 'exponential': np.exp, 'logarithmic': log_absolute, 'square root': np.sqrt, 'absolute': np.abs}
         
     # user interface, gets called when the program starts 
     def initialize_ui(self):
@@ -488,9 +495,11 @@ class App(customtkinter.CTk):
         self.settings_grid_axis_list = self.create_Menu(frame, column=2, row=14, width=70, values=self.settings_grid_axis, command=self.apply_settings, init_val=self.grid_axis)
         self.settings_normalize_list = self.create_Menu(frame, column=1, row=15, width=110, values=self.settings_normalize_function, text="Normalize",  command=self.apply_settings, init_val=self.normalize_function)
         self.settings_normalize_value = self.create_entry(frame,column=2, row=15, width=70, columnspan=2, sticky='w', init_val=self.normalize_value)
-        self.settings_moving_av_list = self.create_Menu(frame, column=1, row=16, columnspan=2, values=self.settings_moving_average, text="Average", command=self.apply_settings, init_val=self.moving_average)
-        self.settings_linewidth_slider = self.create_slider(frame, column=1, row=17, columnspan=2, from_=0.1, to=2, width=155, command= lambda value, strvar="settings_lw_var", var="linewidth": self.update_slider_value(value, strvar, var), text="line width", number_of_steps=19, init_val=self.linewidth)
-        self.settings_alpha_slider = self.create_slider(frame, column=1, row=18, columnspan=2, from_=0, to=1, width=155, command= lambda value, strvar="settings_alpha_var", var="alpha": self.update_slider_value(value, strvar, var), text="line alpha", number_of_steps=20, init_val=self.alpha)
+        self.scale_xaxis_entry = self.create_entry(frame, column=1, row=16, columnspan=2, text="Scale x-axis", placeholder_text="Float", sticky='w', init_val="")
+        self.settings_moving_av_list = self.create_Menu(frame, column=1, row=17, columnspan=2, values=self.settings_moving_average, text="Average", command=self.apply_settings, init_val=self.moving_average)
+        self.settings_linewidth_slider = self.create_slider(frame, column=1, row=18, columnspan=2, from_=0.1, to=2, width=155, command= lambda value, strvar="settings_lw_var", var="linewidth": self.update_slider_value(value, strvar, var), text="line width", number_of_steps=19, init_val=self.linewidth)
+        self.settings_alpha_slider = self.create_slider(frame, column=1, row=19, columnspan=2, from_=0, to=1, width=155, command= lambda value, strvar="settings_alpha_var", var="alpha": self.update_slider_value(value, strvar, var), text="line alpha", number_of_steps=20, init_val=self.alpha)
+        self.settings_apply_y_function_list = self.create_Menu(frame, column=1, row=20, columnspan=2, values=list(self.settings_apply_y_function.keys()), text="Apply y Function", command=self.apply_settings)
 
         self.settings_reset_button = self.create_button(frame, column=4, row=0, text="Reset Settings", command=self.reset_values, width=130, pady=(20,5))
         self.subfolder_button = self.create_switch(frame, column=4, row=1, text="include subfolders in path", command=self.load_file_list)
@@ -517,8 +526,8 @@ class App(customtkinter.CTk):
         self.settings_lw_var = customtkinter.StringVar()
         self.settings_alpha_var = customtkinter.StringVar()
         self.create_label(frame, textvariable=self.settings_pixel_range_var, column=2, row=9, width=30, anchor='e', sticky='e')
-        self.create_label(frame, textvariable=self.settings_lw_var, column=2, row=17, width=30, anchor='e', sticky='e')
-        self.create_label(frame, textvariable=self.settings_alpha_var, column=2, row=18, width=30, anchor='e', sticky='e')
+        self.create_label(frame, textvariable=self.settings_lw_var, column=2, row=18, width=30, anchor='e', sticky='e')
+        self.create_label(frame, textvariable=self.settings_alpha_var, column=2, row=19, width=30, anchor='e', sticky='e')
         frame.grid_columnconfigure(3, minsize=30)
 
         self.settings_canvas_width.bind("<KeyRelease>", self.apply_settings)
@@ -555,6 +564,7 @@ class App(customtkinter.CTk):
         self.settings_cmap_length_list.set(str(self.settings_cmap_length[1]))
         self.settings_plot_type_list.set(next(iter(self.settings_plot_type)))
         self.settings_normalize_list.set(self.settings_normalize_function[0])
+        self.settings_apply_y_function_list.set(next(iter(self.settings_apply_y_function)))
 
         self.settings_clim_slider.set([0,1])
         self.settings_linewidth_slider.set(1)
@@ -1081,26 +1091,23 @@ class App(customtkinter.CTk):
             )
 
         if self.normalize_button.get(): self.normalize()
+        data[:,1:] = moving_average(data[:,1:], self.moving_average)
+        data[:,1:] = self.settings_apply_y_function[self.settings_apply_y_function_list.get()](data[:,1:])
+
+        if self.scale_xaxis_entry.get() != "":
+            try:
+                data[:,0] *= float(self.scale_xaxis_entry.get())
+            except ValueError:
+                logging.error("Invalid value for x-axis scaling. Please enter a numeric value.")
 
         x_data, y_data_list, xerr, yerr = self.get_column_parameters(data)
-
-        self.ymin = min(np.min(y_data_list), self.ymin)
-        self.xmax = max(np.max(x_data), self.xmax)
-        self.xmin = min(np.min(x_data), self.xmin)
-
-        if not self.uselims_button.get():
-            self.ymax = max(np.max(y_data_list), self.ymax)
-        else:
-            xmin_index = np.argmin(abs(x_data - self.xlim_slider.get()[0]))
-            xmax_index = np.argmin(abs(x_data - self.xlim_slider.get()[1]))
-            y_data_list_cropped = [y_data[xmin_index:xmax_index] for y_data in y_data_list]
-            self.ymax = max(np.max(y_data_list_cropped), self.ymax)
 
         ######### create the plot
         plot = getattr(axis, "errorbar")
         text_lines = self.get_textbox_lines(self.ent_legend)
   
         for index, y_data in enumerate(y_data_list):
+
             if self.uselabels_button.get() and index < len(text_lines): 
                 #self.ent_legend.get("0.0","end-1c")
                 if ax == "ax_second" and len(text_lines) > 1: index = 1
@@ -1111,8 +1118,9 @@ class App(customtkinter.CTk):
                                                                          res_x=x_data[1]-x_data[0])
             else: self.plot_kwargs["label"] = None
 
+            
             ##### do the plot
-            container = plot(x_data, moving_average(y_data, self.moving_average), xerr=xerr, yerr=yerr, capsize=3, **self.plot_kwargs)
+            container = plot(x_data, y_data, xerr=xerr, yerr=yerr, capsize=3, **self.plot_kwargs)
             #####
 
             FWHM_line = ()
@@ -1130,6 +1138,21 @@ class App(customtkinter.CTk):
             self.plot_container.append((container,fill, FWHM_line))
             self.plot_order.append(ax)
             self.plot_counter += 1
+
+            y_data_list[index] = y_data  # Update the y_data_list with the potentially modified y_data
+
+
+        self.ymin = max(min(np.min(y_data_list), self.ymin), -1e-100)
+        self.xmax = max(np.max(x_data), self.xmax)
+        self.xmin = min(np.min(x_data), self.xmin)
+
+        if not self.uselims_button.get():
+            self.ymax = max(np.max(y_data_list), self.ymax)
+        else:
+            xmin_index = np.argmin(abs(x_data - self.xlim_slider.get()[0]))
+            xmax_index = np.argmin(abs(x_data - self.xlim_slider.get()[1]))
+            y_data_list_cropped = [y_data[xmin_index:xmax_index] for y_data in y_data_list]
+            self.ymax = max(np.max(y_data_list_cropped), self.ymax)
 
         # Display data in the data table
         self.data_table.delete("0.0", "end")  # delete all text
@@ -1154,8 +1177,8 @@ class App(customtkinter.CTk):
 
         # create the fit
         if self.use_fit == 1 and not(self.FFT_button.get() and ax=="ax1") and (not self.image_plot or self.fit_button.get()):
-            print("Creating fit plot")
-            self.make_fit_plot(ax, dat)
+            logging.info("Creating fit plot")
+            self.make_fit_plot(ax, np.vstack((x_data, y_data_list[0])).T)
 
         if self.FFT_button.get() and ax == "ax1":
             self.create_FFT_border_lines(ax)
@@ -1166,7 +1189,7 @@ class App(customtkinter.CTk):
             
     def make_fit_plot(self, axis, data):
         self.create_fit_border_lines(axis)
-        data = getattr(self,data)
+        # data = getattr(self,data)
         axis = getattr(self,axis)
 
           
@@ -1370,7 +1393,7 @@ class App(customtkinter.CTk):
                 # data = data[:, ~np.isnan(data).all(axis=0)]
             except Exception as error: 
                 data = np.loadtxt(file_path)
-                logging.error(f"np.genfromtxt was not succesful, fallback to np.loadtxt, Error = {error}")
+                logging.error(f"np.genfromtxt was not successful, fallback to np.loadtxt, Error = {error}")
         
         return data
 
@@ -2518,7 +2541,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=level, format=fmt)
 
     app = App()
-    app.state('zoomed')
+    app.state('normal')
     app.protocol("WM_DELETE_WINDOW", app.on_closing)
 
     app.bind("<Control-z>", lambda x: app.control_z())
