@@ -107,13 +107,13 @@ def moving_average(x, window_size):
         smoothed_array (numpy array): The smoothed array.
     """
     # Ensure the window_size is even
+    if window_size <= 1:
+        return x
+    
     if window_size % 2 == 0:
         half_window = window_size // 2
     else:
         half_window = (window_size - 1) // 2
-
-    if window_size <= 1:
-        return x
 
     half_window = window_size // 2
     cumsum = np.cumsum(x)
@@ -255,7 +255,28 @@ def format_number(val):
     else:
         # if val < 0: fill_zeros += 1
         return f"{val:.4f}"  # Standard float with 5 significant digits
+
+def interpolate_data(data, x_min=None, x_max=None, num_points=500):
+    interpolated_data = np.zeros((num_points, data.shape[1]))
+    x = data[:, 0]
+
+
+    if x_min is None: x_min = np.min(x)
+    if x_max is None: x_max = np.max(x)
+
+    # Generate new x values for interpolation
+    x_new = np.linspace(x_min, x_max, num_points)
+    interpolated_data[:,0] = x_new
     
+    for index, y in enumerate(data[:, 1:].T):
+        print(len(x), len(y))
+        # Create an interpolation function for each column of y values
+        interpolation_function = interp1d(x, y, kind='linear', fill_value="extrapolate")
+        y_new = interpolation_function(x_new)
+        interpolated_data[:, 1+index] = y_new
+    
+    return interpolated_data
+
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
@@ -413,17 +434,20 @@ class App(customtkinter.CTk):
         self.create_label(frame, text="Press F1 to activate tooltips", row=16, column=0, sticky="w", padx=20)
         
         #Data Table section
-        self.data_table_button= self.create_switch(self.tabview.tab("Data Table"), text="Plot data table & custom data", command=None, row=0, column=0, padx=20)
-        self.data_table       = self.create_table(self.tabview.tab("Data Table"), width=300, sticky='ns', row=1, column=0, pady=(20,10), padx=10, rowspan=13)
-        self.xval_min_entry   = self.create_entry(self.tabview.tab("Data Table"), row=0, column=3, width=90, text="x-limits", placeholder_text="x min")
-        self.xval_max_entry   = self.create_entry(self.tabview.tab("Data Table"), row=0, column=4, width=90, placeholder_text="x max")
-        self.datapoint_number_entry = self.create_entry(self.tabview.tab("Data Table"), row=1, column=3, width=90, text="length", placeholder_text="Default: 500")
-        self.function_entry   = self.create_entry(self.tabview.tab("Data Table"), row=2, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)")
+        data_table_frame = self.tabview.tab("Data Table")
+
+        self.data_table_button = self.create_switch(data_table_frame, text="Plot data table & custom data", command=None, row=0, column=0, padx=20)
+        self.data_interpol_button = self.create_switch(data_table_frame, text="Interpolate data", command=None, row=1, column=0, padx=20)
+        self.data_table       = self.create_table(data_table_frame, width=300, sticky='ns', row=2, column=0, pady=(20,10), padx=10, rowspan=12)
+        self.xval_min_entry   = self.create_entry(data_table_frame, row=0, column=3, width=90, text="x-limits", placeholder_text="x min")
+        self.xval_max_entry   = self.create_entry(data_table_frame, row=0, column=4, width=90, placeholder_text="x max")
+        self.datapoint_number_entry = self.create_entry(data_table_frame, row=1, column=3, width=90, text="length", placeholder_text="Default: 500")
+        self.function_entry   = self.create_entry(data_table_frame, row=2, column=3, width=200, text="y-Function", columnspan=2, placeholder_text="np.sin(x)")
 
         self.column_dict = {}
         self.column_values = ["None", "x-values", "y-values", "x-error", "y-error"]
         for i in range(0,10):
-            self.column_dict[f'column{i}'], self.column_dict[f'column{i}_label'] = self.create_Menu(self.tabview.tab("Data Table"), column=3, row= 3+i, width=100, values=self.column_values, columnspan=2, sticky='w',textwidget=True, text=f'column {i+1}')
+            self.column_dict[f'column{i}'], self.column_dict[f'column{i}_label'] = self.create_Menu(data_table_frame, column=3, row= 3+i, width=100, values=self.column_values, columnspan=2, sticky='w',textwidget=True, text=f'column {i+1}')
         
         self.column_dict["column0"].set("x-values")
         self.column_dict["column1"].set("y-values")
@@ -1091,8 +1115,15 @@ class App(customtkinter.CTk):
             )
 
         if self.normalize_button.get(): self.normalize()
-        data[:,1:] = moving_average(data[:,1:], self.moving_average)
+        for i in range(1, data.shape[1]):
+            data[:,i] = moving_average(data[:,i], self.moving_average)
         data[:,1:] = self.settings_apply_y_function[self.settings_apply_y_function_list.get()](data[:,1:])
+
+        if self.data_interpol_button.get(): 
+            xmin = float(self.xval_min_entry.get()) if self.xval_min_entry.get() != "" else None
+            xmax = float(self.xval_max_entry.get()) if self.xval_max_entry.get() != "" else None
+            num_points = int(self.datapoint_number_entry.get()) if self.datapoint_number_entry.get() != "" else 500
+            data = interpolate_data(data, x_min = xmin, x_max = xmax, num_points = num_points)
 
         if self.scale_xaxis_entry.get() != "":
             try:
