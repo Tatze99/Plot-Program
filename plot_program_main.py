@@ -16,6 +16,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib_scalebar.scalebar import ScaleBar
 from matplotlib.colors import ListedColormap
 import scipy.ndimage
+from scipy.signal import find_peaks
 # from matplotlib.figure import Figure
 import ctypes
 import matplotlib
@@ -38,7 +39,7 @@ def toggle_bool(event=None):
     global tooltips_enabled
     tooltips_enabled = not tooltips_enabled
 
-version_number = "26/09"
+version_number = "26/11"
 Standard_path = os.path.dirname(os.path.abspath(__file__))
 
 with open(os.path.join(Standard_path, "tooltips.json"), "r", encoding="utf-8") as file:
@@ -180,24 +181,38 @@ def get_border_points(x0, y0, angle, array_shape):
     return intersections
 
 def find_fwhm(xdata, ydata):
-    # Step 1: Find the maximum value and its index
+
+    peaks, _ = find_peaks(ydata, height=0.4*np.max(ydata))  # Adjust the height threshold as needed
+    
+    if len(peaks) == 0:
+        # Fallback if no peaks are detected by find_peaks
+        max_index = np.argmax(ydata)
+        first_peak = max_index
+        last_peak = max_index
+    else:
+        # Find the global maximum peak height and index
+        max_index = peaks[np.argmax(ydata[peaks])]
+        first_peak = peaks[0]
+        last_peak = peaks[-1]
+
+    print(first_peak, last_peak, ydata[first_peak], ydata[last_peak], len(peaks))
+    # Step 1: Find the maximum value
     max_y = np.max(ydata)
-    max_index = np.argmax(ydata)
     
     # Step 2: Calculate the half maximum
     half_max = max_y / 2.0
     
-    # Step 3: Find the index where ydata first crosses the half maximum on the left side of the peak
-    left_index = np.where(ydata[:max_index] <= half_max)[0]
+    # Step 3: Find the index where ydata first crosses the half maximum on the left side of the first peak
+    left_index = np.where(ydata[:first_peak] <= half_max)[0]
     if len(left_index) > 0:
         left_index = left_index[-1]
     else:
         left_index = 0
 
-    # Step 4: Find the index where ydata first crosses the half maximum on the right side of the peak
-    right_index = np.where(ydata[max_index:] <= half_max)[0]
+    # Step 4: Find the index where ydata first crosses the half maximum on the right side of the last peak
+    right_index = np.where(ydata[last_peak:] <= half_max)[0]
     if len(right_index) > 0:
-        right_index = right_index[0] + max_index
+        right_index = right_index[0] + last_peak
     else:
         right_index = len(ydata) - 1
 
@@ -1999,7 +2014,7 @@ class App(customtkinter.CTk):
             
             # Calculate the lower and upper percentile for 98% of the pixel values
             lower_bound = np.percentile(pixel_values, 1)
-            upper_bound = np.percentile(pixel_values, 99)
+            upper_bound = np.percentile(pixel_values, 99.99)
 
             self.clim = (lower_bound, upper_bound)
         elif self.normalize_function == "Maximum":
