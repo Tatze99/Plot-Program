@@ -29,6 +29,9 @@ from natsort import natsorted
 import io # used for latex display buffer
 import logging
 import json
+import re
+from dataclasses import dataclass
+from matplotlib.figure import Figure
 
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
 # ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -55,13 +58,13 @@ matplotlib.rcParams['mathtext.it'] = 'Times New Roman:italic'
 matplotlib.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 
 file_type_names = ('.csv', '.dat', '.txt', '.png', '.jpg', '.jpeg', '.spec', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm', '.lvm')
-image_type_names = ('png','.jpg', '.jpeg', '.JPG', '.bmp', '.webp', '.tif', '.tiff', '.PNG', '.pgm', '.pbm')
+image_type_names = ('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.tif', '.tiff', '.pgm', '.pbm')
 sequential_colormaps = ['magma','hot','viridis', 'plasma', 'inferno', 'cividis', 'gray', 'bone', 'afmhot', 'copper','Purples', 'Blues', 'Greens', 'Oranges', 'Reds','twilight', 'hsv', 'rainbow', 'jet', 'turbo', 'gnuplot', 'brg']
 
 # ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
 TEST_PATH = os.path.join(Standard_path, "test_data")    
-filelist = natsorted([fname for fname in os.listdir(TEST_PATH) if fname.endswith(file_type_names)])
+filelist = natsorted([fname for fname in os.listdir(TEST_PATH) if fname.lower().endswith(file_type_names)])
 
 def exponential(x, a, b, c): 
     return a * np.exp(b * x) + c
@@ -107,31 +110,13 @@ def moving_average(x, window_size):
     Returns:
         smoothed_array (numpy array): The smoothed array.
     """
-    # Ensure the window_size is even
-    if window_size <= 1:
-        return x
-    
-    if window_size % 2 == 0:
-        half_window = window_size // 2
-    else:
-        half_window = (window_size - 1) // 2
-
-    half_window = window_size // 2
-    cumsum = np.cumsum(x)
-
-    # Calculate the sum of elements for each centered window
-    cumsum[window_size:] = cumsum[window_size:] - cumsum[:-window_size]
-    centered_sums = cumsum[window_size - 1:-1]
-
-    # Divide each sum by the window size to get the centered moving average
-    smoothed_array = centered_sums / window_size
-
-    # Pad the beginning and end of the smoothed array with the first and last values of x
-    first_value = np.repeat(x[0], half_window)
-    last_value = np.repeat(x[-1], half_window)
-    smoothed_array = np.concatenate((first_value, smoothed_array, last_value))
-
-    return smoothed_array
+    values = np.asarray(x, dtype=float)
+    if window_size <= 1 or window_size > len(values):
+        return values
+    pad_left = window_size // 2
+    pad_right = window_size - 1 - pad_left
+    padded = np.pad(values, (pad_left, pad_right), mode="edge")
+    return np.convolve(padded, np.ones(window_size) / window_size, mode="valid")
 
 def calc_log_value(x, x_l, x_r):
     if x   <= 1e-6*x_r: x   = 1e-6*x_r
@@ -175,58 +160,54 @@ def get_border_points(x0, y0, angle, array_shape):
             intersections.append((round(x), ydim-1))
     
     # Assuming there are exactly two intersection points for a line intersecting the border
+    intersections = list(dict.fromkeys(intersections))
     if len(intersections) != 2:
         raise ValueError("The line does not intersect the border exactly twice.")
     
     return intersections
 
 def find_fwhm(xdata, ydata):
+    xvalues = np.asarray(xdata, dtype=float)
+    yvalues = np.asarray(ydata, dtype=float)
+    if xvalues.size < 2 or yvalues.size != xvalues.size:
+        raise ValueError("FWHM requires matching x/y arrays with at least two points.")
 
-    peaks, _ = find_peaks(ydata, height=0.4*np.max(ydata))  # Adjust the height threshold as needed
-    
+    peaks, _ = find_peaks(yvalues, height=0.4 * np.max(yvalues))
     if len(peaks) == 0:
-        # Fallback if no peaks are detected by find_peaks
-        max_index = np.argmax(ydata)
-        first_peak = max_index
-        last_peak = max_index
+        first_peak = last_peak = int(np.argmax(yvalues))
     else:
-        # Find the global maximum peak height and index
-        max_index = peaks[np.argmax(ydata[peaks])]
-        first_peak = peaks[0]
-        last_peak = peaks[-1]
+        first_peak, last_peak = int(peaks[0]), int(peaks[-1])
 
-    print(first_peak, last_peak, ydata[first_peak], ydata[last_peak], len(peaks))
-    # Step 1: Find the maximum value
-    max_y = np.max(ydata)
-    
-    # Step 2: Calculate the half maximum
-    half_max = max_y / 2.0
-    
-    # Step 3: Find the index where ydata first crosses the half maximum on the left side of the first peak
-    left_index = np.where(ydata[:first_peak] <= half_max)[0]
-    if len(left_index) > 0:
-        left_index = left_index[-1]
-    else:
-        left_index = 0
+    half_max = np.max(yvalues) / 2.0
+    half_height_peaks = peaks[yvalues[peaks] >= half_max] if len(peaks) else np.array([], dtype=int)
+    if half_height_peaks.size:
+        first_peak = int(half_height_peaks[0])
+        last_peak = int(half_height_peaks[-1])
+    left_candidates = np.where(yvalues[:first_peak] <= half_max)[0]
+    right_candidates = np.where(yvalues[last_peak:] <= half_max)[0]
+    left_index = int(left_candidates[-1]) if left_candidates.size else 0
+    right_index = (
+        int(right_candidates[0] + last_peak)
+        if right_candidates.size
+        else len(yvalues) - 1
+    )
 
-    # Step 4: Find the index where ydata first crosses the half maximum on the right side of the last peak
-    right_index = np.where(ydata[last_peak:] <= half_max)[0]
-    if len(right_index) > 0:
-        right_index = right_index[0] + last_peak
-    else:
-        right_index = len(ydata) - 1
-
-    # Step 5: Interpolation to find the exact position of half maximum on both sides
-    x_left = xdata[left_index] + (xdata[left_index + 1] - xdata[left_index]) * \
-             (half_max - ydata[left_index]) / (ydata[left_index + 1] - ydata[left_index])
-
-    x_right = xdata[right_index - 1] + (xdata[right_index] - xdata[right_index - 1]) * \
-              (half_max - ydata[right_index - 1]) / (ydata[right_index] - ydata[right_index - 1])
-
-    # Step 6: Calculate the FWHM
-    fwhm = x_right - x_left
-    
-    return x_left, x_right, half_max, fwhm
+    left_denominator = yvalues[left_index + 1] - yvalues[left_index]
+    right_denominator = yvalues[right_index] - yvalues[right_index - 1]
+    x_left = (
+        xvalues[left_index]
+        if left_denominator == 0
+        else xvalues[left_index] + (xvalues[left_index + 1] - xvalues[left_index])
+        * (half_max - yvalues[left_index]) / left_denominator
+    )
+    x_right = (
+        xvalues[right_index]
+        if right_denominator == 0
+        else xvalues[right_index - 1]
+        + (xvalues[right_index] - xvalues[right_index - 1])
+        * (half_max - yvalues[right_index - 1]) / right_denominator
+    )
+    return x_left, x_right, half_max, x_right - x_left
 
 def flatten(data):
     for item in data:
@@ -235,33 +216,76 @@ def flatten(data):
         else:
             yield item
 
-def determine_delimiter_and_column_count(file_path, skip_row):
-    with open(file_path, 'r') as file:
-        # Skip lines until the desired line
-        for _ in range(skip_row):
-            file.readline()
-        # Read the first line
-        target_line = file.readline().strip()
-        
-        # Potential delimiters
-        delimiters = [';', '\t',' ']
-        if '.' in target_line:
-            delimiters.append(',')
-        delimiter = None
-        max_columns = 0
-        
-        # Determine the delimiter by checking which one results in the most columns
-        for d in delimiters:
-            columns = target_line.split(d)
-            if len(columns) > max_columns:
-                max_columns = len(columns)
-                if d == ' ': # handle any amount of white space
-                    delimiter = None
-                else:
-                    delimiter = d
-        
-        print(target_line, delimiters, delimiter)
-        return delimiter, max_columns
+def _numeric_token(value):
+    value = value.strip().strip('"\'')
+    if not value:
+        return None
+    for decimal in (".", ","):
+        candidate = value.replace(decimal, ".") if decimal in value and value.count(decimal) == 1 else value
+        try:
+            return float(candidate)
+        except ValueError:
+            continue
+    return None
+
+def _parse_numeric_lines(lines):
+    candidates = [None, "\t", ";", "|", ","]
+    best = None
+    for delimiter in candidates:
+        rows = []
+        for line in lines:
+            if not line.strip() or line.lstrip().startswith(("#", "%")):
+                continue
+            parts = re.split(r"\s+", line.strip()) if delimiter is None else [p.strip() for p in line.split(delimiter)]
+            numbers = [_numeric_token(part) for part in parts]
+            if len(parts) >= 2 and sum(number is not None for number in numbers) >= 2:
+                rows.append([number for number in numbers if number is not None])
+        if rows:
+            width = max(len(row) for row in rows)
+            consistent = sum(len(row) == width for row in rows)
+            score = (consistent, width, len(rows))
+            if best is None or score > best[0]:
+                best = (score, delimiter, rows)
+    if best is None:
+        raise ValueError("No numeric data rows were found.")
+    width = best[0][1]
+    rows = [row[:width] for row in best[2] if len(row) >= width]
+    return np.asarray(rows, dtype=float), best[1]
+
+
+def determine_delimiter_and_column_count(file_path, skip_row=0):
+    with open(file_path, "r", encoding="utf-8-sig") as file:
+        lines = file.readlines()[skip_row:]
+    _, delimiter = _parse_numeric_lines(lines)
+    data, _ = _parse_numeric_lines(lines)
+    logging.debug("Detected delimiter %r with %d columns", delimiter, data.shape[1])
+    return delimiter, data.shape[1]
+
+
+@dataclass
+class PlotSettings:
+    canvas_width: float = 17
+    canvas_height: float = 10
+    pixel_size: float = 7.4e-3
+    label_dist: float = 1
+    moving_average: int = 1
+    linewidth: float = 1
+    alpha: float = 1
+    normalize_function: str = "Maximum"
+    normalize_value: float = 1
+    grid_ticks: str = "major"
+    grid_axis: str = "both"
+    plot_type: str = "errorbar"
+
+
+class TkLoggingHandler(logging.Handler):
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+
+    def emit(self, record):
+        message = self.format(record)
+        self.app.after(0, self.app.append_log_message, message)
 
 def format_number(val):
     # Format with 5 significant digits, using scientific notation if the value is very small or large
@@ -284,7 +308,7 @@ def interpolate_data(data, x_min=None, x_max=None, num_points=500):
     interpolated_data[:,0] = x_new
     
     for index, y in enumerate(data[:, 1:].T):
-        print(len(x), len(y))
+        logging.debug("Interpolating %d x values and %d y values", len(x), len(y))
         # Create an interpolation function for each column of y values
         interpolation_function = interp1d(x, y, kind='linear', fill_value="extrapolate")
         y_new = interpolation_function(x_new)
@@ -319,6 +343,7 @@ class App(customtkinter.CTk):
         self.img_previous = customtkinter.CTkImage(dark_image=Image.open(os.path.join(Standard_path,"ui_images","previous_arrow.png")), size=(15, 15))
         
     def initialize_variables(self):
+        self.settings = PlotSettings()
         self.ax1 = None
         self.ax2 = None
         self.plot_counter = 1
@@ -329,8 +354,8 @@ class App(customtkinter.CTk):
         self.legend_type = {'loc': 'best'}
         self.legend_name = slice(None, None)
         self.canvas_ratio = None #None - choose ratio automatically
-        self.canvas_width = 17 #cm
-        self.canvas_height= 10
+        self.canvas_width = self.settings.canvas_width #cm
+        self.canvas_height = self.settings.canvas_height
         self.label_settings = "smart"
         self.ticks_settings = "smart"
         self.multiplot_row = 9
@@ -341,21 +366,21 @@ class App(customtkinter.CTk):
         self.linestyle='-'
         self.markers=''
         self.cmap="tab10"
-        self.linewidth=1
-        self.alpha = 1
-        self.moving_average = 1
+        self.linewidth = self.settings.linewidth
+        self.alpha = self.settings.alpha
+        self.moving_average = self.settings.moving_average
         self.use_grid_lines = customtkinter.BooleanVar(value=False)
         self.use_minor_ticks = customtkinter.BooleanVar(value=False)
-        self.grid_ticks = 'major'
-        self.grid_axis = 'both'
+        self.grid_ticks = self.settings.grid_ticks
+        self.grid_axis = self.settings.grid_axis
         self.cmap_length = 10
         self.single_color = 'tab:blue'
         self.sub_plot_counter = 1
         self.sub_plot_value = 1
         self.first_ax2 = True
         self.draw_FWHM_line = customtkinter.BooleanVar(value=False)
-        self.normalize_function = 'Maximum'
-        self.normalize_value = 1
+        self.normalize_function = self.settings.normalize_function
+        self.normalize_value = self.settings.normalize_value
         
         # image plot settings
         self.cmap_imshow="magma"
@@ -423,8 +448,10 @@ class App(customtkinter.CTk):
         self.tabview.add("Show Plots")
         self.tabview.add("Data Table")
         self.tabview.add("Settings")
+        self.tabview.add("Console")
         self.tabview.tab("Show Plots").columnconfigure(0, weight=1)
         self.tabview.tab("Show Plots").rowconfigure(0, weight=1)
+        self.initialize_console()
 
         #buttons
         frame = self.sidebar_frame
@@ -548,7 +575,7 @@ class App(customtkinter.CTk):
         self.settings_cbar_switch_button = self.create_switch(frame, column=4, row=7, text="Use Colorbar", command=lambda: self.toggle_boolean(self.use_colorbar))
         self.settings_convert_rgb_button = self.create_switch(frame, column=4, row=8, text="Convert RGB to gray", command=lambda: self.toggle_boolean(self.convert_rgb_to_gray))
         self.settings_save_plain_img_button = self.create_switch(frame, column=4, row=9, text="Save plain images", command=lambda: self.toggle_boolean(self.save_plain_image))
-        self.settings_hide_params_button = self.create_switch(frame, column=4, row=11, text="Hide fit params", command=lambda: (self.toggle_boolean(self.display_fit_params_in_plot), self.apply_settings(None)))
+        self.settings_hide_params_button = self.create_switch(frame, column=4, row=11, text="Hide fit params", command=self.toggle_fit_params)
         self.settings_show_FWHM_button = self.create_switch(frame, column=4, row=12, text="Draw FWHM line", command=lambda: self.toggle_boolean(self.draw_FWHM_line))
         self.settings_grid_lines_button = self.create_switch(frame, column=4, row=13, text="Use Grid", command=lambda: (self.toggle_boolean(self.use_grid_lines), self.apply_settings(None)))
         self.mid_axis_button  = self.create_switch(frame, column=4, row=14, text="middle axis lines", command=None)
@@ -627,12 +654,14 @@ class App(customtkinter.CTk):
 
     def apply_settings(self, val):
         try:
-            self.canvas_width=float(self.settings_canvas_width.get())
-            self.canvas_height=float(self.settings_canvas_height.get())
-            self.pixel_size=float(self.settings_pixel_size.get())*1e-3
-            self.label_dist=float(self.settings_label_dist.get())
-        except: pass 
-        self.normalize_value=float(self.settings_normalize_value.get())
+            self.canvas_width = float(self.settings_canvas_width.get())
+            self.canvas_height = float(self.settings_canvas_height.get())
+            self.pixel_size = float(self.settings_pixel_size.get()) * 1e-3
+            self.label_dist = float(self.settings_label_dist.get())
+            self.normalize_value = float(self.settings_normalize_value.get())
+        except ValueError as error:
+            logging.warning("Invalid numeric plot setting: %s", error)
+            return
         self.aspect=self.settings_aspect.get()
         self.cmap_imshow=self.settings_cmap_imshow_list.get()
         self.clim=tuple(self.settings_clim_slider.get())
@@ -651,9 +680,20 @@ class App(customtkinter.CTk):
         self.cmap_length = int(self.settings_cmap_length_list.get())
         self.single_color = self.settings_single_color[self.settings_single_colors_list.get()]
         self.normalize_function = self.settings_normalize_list.get()
+        self.settings.canvas_width = self.canvas_width
+        self.settings.canvas_height = self.canvas_height
+        self.settings.pixel_size = self.pixel_size
+        self.settings.label_dist = self.label_dist
+        self.settings.normalize_value = self.normalize_value
+        self.settings.moving_average = self.moving_average
+        self.settings.linewidth = self.linewidth
+        self.settings.alpha = self.alpha
+        self.settings.grid_ticks = self.grid_ticks
+        self.settings.grid_axis = self.grid_axis
+        self.settings.normalize_function = self.normalize_function
 
         if self.settings_cmap_list.get() in sequential_colormaps:
-            self.settings_cmap_length_list.configure(state="enabled")
+            self.settings_cmap_length_list.configure(state="normal")
         else: 
             self.settings_cmap_length_list.configure(state="disabled")
 
@@ -664,14 +704,15 @@ class App(customtkinter.CTk):
             self.settings_single_colors_list.grid_remove()
             self.settings_cmap_length_list.grid()
 
-        if val == None and hasattr(self, 'image'): 
+        if val is None and hasattr(self, 'image') and hasattr(self, "canvas"):
             self.image.set_clim(self.clim)
             if self.lineout_button.get():
                 self.update_lineout_aspect()
-            self.canvas.draw()
+            self.canvas.draw_idle()
 
-        self.plot_axis_parameters("ax1", plot_counter=self.plot_counter)
-        self.update_plot(None)
+        if self.initialize_plot_has_been_called and self.ax1 is not None:
+            self.plot_axis_parameters("ax1", plot_counter=self.plot_counter)
+            self.update_plot(None)
 
     def update_canvas_size(self, canvas_ratio):
         if self.canvas_width <= 2 or self.canvas_height <= 2: return
@@ -695,7 +736,7 @@ class App(customtkinter.CTk):
             self.fig.set_size_inches(w=width, h=height, forward=True)
             self.canvas_widget.pack(fill="both", expand=True) 
 
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
     def create_label(self, parent, row, column, width=20, text=None, anchor='e', sticky='e', textvariable=None, padx=(5,5), image=None, pady=None, font=None, columnspan=1, fg_color=None, **kwargs):
         label = customtkinter.CTkLabel(parent, text=text, textvariable=textvariable, width=width, image=image, anchor=anchor, font=font, fg_color=fg_color,  **kwargs)
@@ -800,9 +841,9 @@ class App(customtkinter.CTk):
         if not self.initialize_plot_has_been_called:
             self.initialize_plot_has_been_called = True
             for name in ["multiplot_button", "uselabels_button", "uselims_button", "fit_button", "normalize_button", "lineout_button", "FFT_button"]:
-                getattr(self, name).configure(state="enabled")
+                getattr(self, name).configure(state="normal")
 
-            self.fig = plt.figure(constrained_layout=True, dpi=150) 
+            self.fig = Figure(constrained_layout=True, dpi=150)
             self.canvas = FigureCanvasTkAgg(self.fig, master=self.tabview.tab("Show Plots"))
             self.canvas_widget = self.canvas.get_tk_widget()
             self.toolbar = self.create_toolbar()
@@ -821,7 +862,9 @@ class App(customtkinter.CTk):
 
     def initialize_plot(self):
         self.fig.clear()
-        self.canvas.draw()
+        self.canvas.draw_idle()
+        self.FFT_xmin_line = None
+        self.FFT_xmax_line = None
         self.ax2 = None
         self.ax1 = None
         self.first_ax2 = True 
@@ -866,24 +909,24 @@ class App(customtkinter.CTk):
 
         # Decide if there is an image to process or a data file
         self.image_plot_prev = self.image_plot
-        if file_path.endswith(image_type_names) and not self.data_table_button.get():
+        if file_path.lower().endswith(image_type_names) and not self.data_table_button.get():
             self.image_plot = True 
         else:
             self.image_plot = False
 
         if self.image_plot: 
             if self.FFT_button.get(): self.FFT_button.toggle()
-            self.lineout_button.configure(state="enabled")
+            self.lineout_button.configure(state="normal")
             self.FFT_button.configure(state="disabled")
             if self.lineout_button.get():
                 # if self.fit_button.get(): self.fit_button.toggle()
-                self.fit_button.configure(state="enabled")
+                self.fit_button.configure(state="normal")
             else: self.fit_button.configure(state="disabled")
         else:
             if self.lineout_button.get(): self.lineout_button.toggle()
             self.lineout_button.configure(state="disabled")
-            self.FFT_button.configure(state="enabled")
-            self.fit_button.configure(state="enabled")
+            self.FFT_button.configure(state="normal")
+            self.fit_button.configure(state="normal")
 
         # multiplots but in several subplots
         if self.replot and (self.rows != 1 or self.cols != 1):
@@ -1130,9 +1173,16 @@ class App(customtkinter.CTk):
             )
 
         if self.normalize_button.get(): self.normalize()
-        for i in range(1, data.shape[1]):
-            data[:,i] = moving_average(data[:,i], self.moving_average)
-        data[:,1:] = self.settings_apply_y_function[self.settings_apply_y_function_list.get()](data[:,1:])
+        y_columns = [
+            int(key.replace("column", ""))
+            for key, widget in self.column_dict.items()
+            if type(widget) is customtkinter.CTkOptionMenu and widget.get() == "y-values"
+        ]
+        for column in y_columns:
+            data[:, column] = moving_average(data[:, column], self.moving_average)
+        y_function = self.settings_apply_y_function[self.settings_apply_y_function_list.get()]
+        if y_columns:
+            data[:, y_columns] = y_function(data[:, y_columns])
 
         if self.data_interpol_button.get(): 
             xmin = float(self.xval_min_entry.get()) if self.xval_min_entry.get() != "" else None
@@ -1147,6 +1197,8 @@ class App(customtkinter.CTk):
                 logging.error("Invalid value for x-axis scaling. Please enter a numeric value.")
 
         x_data, y_data_list, xerr, yerr = self.get_column_parameters(data)
+        if x_data is None or not y_data_list:
+            raise ValueError("Select one x-values column and at least one y-values column.")
 
         ######### create the plot
         plot = getattr(axis, "errorbar")
@@ -1157,11 +1209,9 @@ class App(customtkinter.CTk):
             if self.uselabels_button.get() and index < len(text_lines): 
                 #self.ent_legend.get("0.0","end-1c")
                 if ax == "ax_second" and len(text_lines) > 1: index = 1
-                self.plot_kwargs["label"] = text_lines[index].format(name=self.optmenu.get()[self.legend_name], 
-                                                                         ymax=np.max(y_data), 
-                                                                         xmax=x_data[np.argmax(y_data)], 
-                                                                         fwhm=find_fwhm(x_data,y_data)[-1], 
-                                                                         res_x=x_data[1]-x_data[0])
+                self.plot_kwargs["label"] = self.format_legend_label(
+                    text_lines[index], x_data, y_data
+                )
             else: self.plot_kwargs["label"] = None
 
             
@@ -1188,7 +1238,7 @@ class App(customtkinter.CTk):
             y_data_list[index] = y_data  # Update the y_data_list with the potentially modified y_data
 
 
-        self.ymin = max(min(np.min(y_data_list), self.ymin), -1e-100)
+        self.ymin = min(np.min(y_data_list), self.ymin)
         self.xmax = max(np.max(x_data), self.xmax)
         self.xmin = min(np.min(x_data), self.xmin)
 
@@ -1269,9 +1319,19 @@ class App(customtkinter.CTk):
             linewidth = self.linewidth
             )
 
-        self.fit_lineout, = axis.plot(data[minimum:maximum, 0], self.fit_plot(self.function, self.params, data[minimum:maximum,:]), **self.plot_kwargs_fit)
+        try:
+            fit_values = self.fit_plot(self.function, self.params, data[minimum:maximum, :])
+        except (RuntimeError, ValueError):
+            logging.warning("Fit line was not drawn because the fit did not converge.")
+            return
+        self.fit_lineout, = axis.plot(data[minimum:maximum, 0], fit_values, **self.plot_kwargs_fit)
 
-        self.fit_params_box = axis.text(0.05, 0.9, FitWindow.get_fitted_labels(self.fit_window), color="black", ha='left', va='top', transform=axis.transAxes, bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.6', alpha=0.8), size=8)
+        self.fit_params_box = axis.text(
+            0.05, 0.9, FitWindow.get_fitted_labels(self.fit_window),
+            color="black", ha="left", va="top", transform=axis.transAxes,
+            bbox=dict(facecolor="white", edgecolor="black", boxstyle="round,pad=0.6", alpha=0.8),
+            size=8, visible=self.display_fit_params_in_plot.get()
+        )
 
     def make_image_plot(self, file_path):
         # used in a onegraph multiplot when we change to an image
@@ -1290,13 +1350,18 @@ class App(customtkinter.CTk):
         # self.data = plt.imread(io.BytesIO(np.frombuffer(image_data, np.uint8)))
         image = Image.open(io.BytesIO(image_data))
 
-        # Check if the image is 16-bit (mode 'I;16') or 8-bit (mode 'L' or 'RGB')
-        if image.mode in ('I;16', 'I'):
-            # 16-bit image, normalize by 65535
-            self.data = np.array(image).astype(np.float32) / 65535.0
+        if image.mode in ("P", "RGBA", "LA"):
+            image = image.convert("RGB" if image.mode in ("P", "RGBA") else "L")
+        raw_image = np.asarray(image)
+        if image.mode == "I;16":
+            divisor = 65535.0
+        elif image.mode == "I":
+            divisor = max(float(np.iinfo(raw_image.dtype).max), 1.0) if np.issubdtype(raw_image.dtype, np.integer) else 1.0
+        elif np.issubdtype(raw_image.dtype, np.integer):
+            divisor = float(np.iinfo(raw_image.dtype).max)
         else:
-            # 8-bit image, normalize by 255
-            self.data = np.array(image).astype(np.float32) / 255.0
+            divisor = 1.0
+        self.data = raw_image.astype(np.float32) / divisor
 
         # if the image has color channels, make sure they have the right order, if all channels are the same, reduce it to one channel
         if len(self.data.shape) == 3:
@@ -1306,6 +1371,8 @@ class App(customtkinter.CTk):
                 self.data = self.data[...,0]
             elif self.convert_rgb_to_gray.get():
                 self.data = 0.2989 * r + 0.5870 * g + 0.1140 * b
+            else:
+                raise ValueError("RGB images require 'Convert RGB to gray' for lineout analysis.")
         
         self.data = np.flipud(self.data)
 
@@ -1390,7 +1457,7 @@ class App(customtkinter.CTk):
             try:
                 self.fit_xmin_line.set_xdata([self.fit_window.fit_borders_slider.get()[0]])
                 self.fit_xmax_line.set_xdata([self.fit_window.fit_borders_slider.get()[1]])
-            except:
+            except AttributeError:
                 if self.lineout_button.get() or self.FFT_button.get():
                     self.create_fit_border_lines("ax_second")
                 else:
@@ -1408,7 +1475,7 @@ class App(customtkinter.CTk):
                     if i in [1,2]: # error caps
                         line.set_markeredgewidth(self.linewidth)
 
-        self.canvas.draw()
+        self.canvas.draw_idle()
     
     def load_plot_data(self, file_path):
         if self.data_table_button.get():
@@ -1419,27 +1486,14 @@ class App(customtkinter.CTk):
                 xmax = float(self.xval_max_entry.get()) if self.xval_max_entry.get() else 5
                 length = int(self.datapoint_number_entry.get()) if self.datapoint_number_entry.get() else 500
                 x = np.linspace(xmin, xmax,length)
-                globals_dict = {"np": np, "x": x}
+                globals_dict = {"__builtins__": {}, "np": np, "x": x}
                 y = eval(self.function_entry.get(), globals_dict)
-                data = np.vstack((x,y)).T
+                data = np.vstack((x, np.broadcast_to(y, x.shape))).T
         
         else:
-            try:
-                skip_rows = self.skip_rows(file_path)
-                file_decimal = self.open_file(file_path)
-                delimiter, maxcolumns = determine_delimiter_and_column_count(file_path, skip_rows)
-                logging.info(f"skip rows = {skip_rows}, file decimal = {file_decimal}, delimiter = '{delimiter}', max columns = {maxcolumns}")
-
-                # Custom converter to replace commas with dots, for numpy v>2.0.0, you need to remove ".decode('utf-8')"
-                # comma_to_dot = lambda x: float(x.decode('utf-8').replace(file_decimal, '.'))
-                comma_to_dot = lambda x: float(x.replace(file_decimal, '.'))
-
-                # Load the data, applying the converter to all columns
-                data = np.genfromtxt(file_path, skip_header=skip_rows, delimiter=delimiter,  filling_values=np.nan,  converters={i: comma_to_dot for i in range(maxcolumns)})
-                # data = data[:, ~np.isnan(data).all(axis=0)]
-            except Exception as error: 
-                data = np.loadtxt(file_path)
-                logging.error(f"np.genfromtxt was not successful, fallback to np.loadtxt, Error = {error}")
+            with open(file_path, "r", encoding="utf-8-sig") as file:
+                data, delimiter = _parse_numeric_lines(file.readlines())
+            logging.info("Loaded %s with delimiter %r and shape %s", file_path, delimiter, data.shape)
         
         return data
 
@@ -1447,11 +1501,20 @@ class App(customtkinter.CTk):
         ax = getattr(self,axis)
         self.fit_xmin_line = ax.axvline([self.fit_window.fit_borders_slider.get()[0]], alpha = 0.4, lw=0.5)
         self.fit_xmax_line = ax.axvline([self.fit_window.fit_borders_slider.get()[1]], alpha = 0.4, lw=0.5)
-    
+
     def create_FFT_border_lines(self, axis):
-        ax = getattr(self,axis)
-        self.FFT_xmin_line = ax.axvline([self.FFT_borders_slider.get()[0]], alpha = 0.4, lw=0.5)
-        self.FFT_xmax_line = ax.axvline([self.FFT_borders_slider.get()[1]], alpha = 0.4, lw=0.5)
+        ax = getattr(self, axis)
+        for name in ("FFT_xmin_line", "FFT_xmax_line"):
+            line = getattr(self, name, None)
+            if line is not None:
+                try:
+                    line.remove()
+                except (ValueError, NotImplementedError):
+                    logging.debug("FFT border line was already removed.", exc_info=True)
+                setattr(self, name, None)
+        left, right = self.FFT_borders_slider.get()
+        self.FFT_xmin_line = ax.axvline(left, alpha=0.4, lw=0.8)
+        self.FFT_xmax_line = ax.axvline(right, alpha=0.4, lw=0.8)
 
     def change_plot(self, replot, direction):
         index = filelist.index(self.optmenu.get()) + direction
@@ -1465,31 +1528,38 @@ class App(customtkinter.CTk):
             self.reset_plots = True
 
     def fit_plot(self, function, initial_params, data):
-        params,K=cf(function,data[:, 0],data[:, 1], p0=initial_params)
+        try:
+            params, K = cf(function, data[:, 0], data[:, 1], p0=initial_params)
+        except (RuntimeError, ValueError) as error:
+            logging.error("Fit failed: %s", error)
+            raise
         # write fit parameters in an array to access
         FitWindow.set_fitted_values(self.fit_window, params, K)
         return function(data[:,0], *params)
         
     def read_file_list(self):
-        path = customtkinter.filedialog.askdirectory(initialdir=self.folder_path)
+        path = customtkinter.filedialog.askdirectory(initialdir=self.folder_path.get())
         if path != "":
             self.folder_path.reinsert(0, path)
         self.load_file_list()
          
     def load_file_list(self, val=None):
         global filelist
+        folder = self.folder_path.get().strip()
+        if not os.path.isdir(folder):
+            logging.warning("Folder does not exist: %s", folder)
+            self.optmenu.configure(values=[])
+            return
         if self.subfolder_button.get():
             filelist = natsorted(
-            [ os.path.relpath(os.path.join(root, fname), start=self.folder_path.get())
-                for root, _, files in os.walk(self.folder_path.get())
-                for fname in files
-                if fname.endswith(file_type_names)
-            ])
+                [os.path.relpath(os.path.join(root, fname), start=folder)
+                 for root, _, files in os.walk(folder)
+                 for fname in files if fname.lower().endswith(file_type_names)])
         else:
-            filelist = natsorted([fname for fname in os.listdir(self.folder_path.get()) if fname.endswith(file_type_names)])
-        
+            filelist = natsorted([fname for fname in os.listdir(folder) if fname.lower().endswith(file_type_names)])
+
         self.optmenu.configure(values=filelist)
-        self.optmenu.set(filelist[0])
+        self.optmenu.set(filelist[0] if filelist else "")
     
     def hide_column_entries(self, data):
         if data.ndim == 1: 
@@ -1503,7 +1573,7 @@ class App(customtkinter.CTk):
                     self.column_dict[entry].set(None)
 
     def determine_data_columns(self, file_name):
-        if not file_name.endswith(image_type_names):
+        if not file_name.lower().endswith(image_type_names):
             data = self.load_plot_data(os.path.join(self.folder_path.get(), file_name))
             self.hide_column_entries(data)
         else:
@@ -1518,6 +1588,32 @@ class App(customtkinter.CTk):
         for i in range(1, num_lines + 1):
             line_text.append(textbox.get(f"{i}.0", f"{i}.end"))
         return line_text
+
+    def format_legend_label(self, template, x_data=None, y_data=None):
+        values = {"name": self.optmenu.get()[self.legend_name]}
+        if x_data is not None and y_data is not None:
+            values.update({
+                "ymax": np.max(y_data),
+                "xmax": x_data[np.argmax(y_data)],
+                "res_x": x_data[1] - x_data[0],
+            })
+            if "{fwhm" in template:
+                values["fwhm"] = find_fwhm(x_data, y_data)[-1]
+
+        pattern = re.compile(r"\{(name|ymax|xmax|fwhm|res_x)(:[^{}]*)?\}")
+
+        def replace(match):
+            key, format_spec = match.group(1), match.group(2)
+            if key not in values:
+                return match.group(0)
+            spec = format_spec[1:] if format_spec else ""
+            try:
+                return format(values[key], spec)
+            except (ValueError, TypeError):
+                logging.warning("Invalid legend format %s for %s", match.group(0), key)
+                return str(values[key])
+
+        return pattern.sub(replace, template)
 
     def control_z(self):
         
@@ -1536,7 +1632,8 @@ class App(customtkinter.CTk):
             for item in list(flatten(self.plot_container[-1])):
                 try:
                     item.remove()
-                except: pass
+                except (AttributeError, ValueError):
+                    logging.debug("Could not remove plot artist during undo", exc_info=True)
 
             self.plot_container.pop()
             self.plot_order.pop()
@@ -1551,7 +1648,7 @@ class App(customtkinter.CTk):
             if self.uselabels_button.get(): 
                 self.legend_container[self.plot_index] = self.make_line_legend(self.ax1)
 
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
     def read_table_data(self, data_string):
         data_string = data_string.replace(",",".")
@@ -1597,10 +1694,20 @@ class App(customtkinter.CTk):
 
             #set the properties of the entry object, key release event, set the value to the slider and update the limits,
             # slider_widget = slider_widget is necessary to force the lambda function to capture the current value of slider_widget instead of calling it, when the key is pressed, otherwise slider_widget = ylim_r is used!
-            entryl_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: (slider_widget.set([float(val1.get()), float(val2.get())]), self.update_plot(val1)))
-            entryr_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: (slider_widget.set([float(val1.get()), float(val2.get())]), self.update_plot(val2)))
+            entryl_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: self.update_limit_from_entry(val1, val2, slider_widget))
+            entryr_widget.bind("<KeyRelease>", lambda event, val1=entryl_widget, val2=entryr_widget, slider_widget=slider_widget: self.update_limit_from_entry(val1, val2, slider_widget))
         
         self.use_limits()
+
+    def update_limit_from_entry(self, left_entry, right_entry, slider):
+        try:
+            left, right = float(left_entry.get()), float(right_entry.get())
+        except ValueError:
+            return
+        if left >= right:
+            return
+        slider.set([left, right])
+        self.update_plot(left_entry)
 
     def use_limits(self):
         widget_names = ["xlim_slider","ylim_slider","labx","laby","limits_title", "xlim_lbox", "xlim_rbox", "ylim_lbox", "ylim_rbox"]
@@ -1634,7 +1741,7 @@ class App(customtkinter.CTk):
             ylim_max = np.max(self.data[:,1])
         
         return xlim_min, xlim_max, ylim_min, ylim_max
-        
+
     #############################################################
     ######################## Labels #############################
     #############################################################
@@ -1676,20 +1783,28 @@ class App(customtkinter.CTk):
         self.fig.suptitle(self.ent_title.get())
 
         if self.image_plot and self.ent_legend.get("0.0","end-1c") != "":
-            self.ax1.legend(labels=[self.ent_legend.get("0.0","end-1c")], handles=[self.ax1.plot([],[])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, fontsize=self.legend_font_size,fancybox=True,**self.legend_type)
+            label = self.format_legend_label(self.ent_legend.get("0.0", "end-1c"))
+            self.ax1.legend(labels=[label], handles=[self.ax1.plot([], [])[0]], handlelength=0, handleheight=0, handletextpad=0, framealpha=1, fontsize=self.legend_font_size, fancybox=True, **self.legend_type)
         elif self.clicked_axis_index is not None:
             plot_container = self.multiplot_container.copy()
             plot_container.append(self.plot_container)
             plot_container = plot_container[self.plot_index]
 
-            if not plot_container[self.clicked_axis_index][0][0].get_visible():
-                plot_container[self.clicked_axis_index][0].set_label(self.ent_legend.get("0.0","end-1c"))
+            selected_plot = plot_container[self.clicked_axis_index]
+            source_line = selected_plot[0][0]
+            label = self.format_legend_label(
+                self.ent_legend.get("0.0", "end-1c"),
+                source_line.get_xdata(),
+                source_line.get_ydata(),
+            )
+            selected_plot[0].set_label(label)
 
             for ax_line in plot_container:
                 ax_line = self.change_plot_visibility(ax_line, visibility=True)
 
                 self.legend_container[self.plot_index] = self.make_line_legend(ax, remove=False, container=plot_container)
-        self.canvas.draw()
+        self.canvas.draw_idle()
+
     #############################################################
     ##################### multiplot #############################
     #############################################################
@@ -1775,7 +1890,10 @@ class App(customtkinter.CTk):
             self.initialize_lineout(self.choose_ax_button.get())
         else:
             [getattr(self, name).grid_remove() for name in widget_names]
-            self.multiplot_button.configure(state="enabled")
+            self.display_fit_params_in_plot.set(
+                not bool(self.settings_hide_params_button.get())
+            )
+            self.multiplot_button.configure(state="normal")
             self.replot = False
             self.close_settings_window()
 
@@ -1825,7 +1943,7 @@ class App(customtkinter.CTk):
 
         self.update_lineout_aspect()
 
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
     def get_lineout_data(self):
         if self.choose_ax_button.get() == " x ":
@@ -1860,15 +1978,21 @@ class App(customtkinter.CTk):
 
         self.axline.set_data([x1, x2],[y1, y2])
         self.axpoint.set_data([self.lineout_xvalue], [self.lineout_yvalue])
-        self.lineout_plot.set_data(self.lineout_data[:,0], self.lineout_data[:,1])
+        lineout_y = moving_average(self.lineout_data[:, 1], self.moving_average)
+        self.lineout_plot.set_data(self.lineout_data[:, 0], lineout_y)
         self.update_lineout_aspect()
 
         if self.use_fit == 1:
             minimum = np.argmin(abs(self.lineout_data[:,0] - self.fit_window.fit_borders_slider.get()[0]))
             maximum = np.argmin(abs(self.lineout_data[:,0] - self.fit_window.fit_borders_slider.get()[1]))
             self.fit_lineout.set_xdata(self.lineout_data[minimum:maximum,0])
-            self.fit_lineout.set_ydata(self.fit_plot(self.function, self.params, self.lineout_data[minimum:maximum,:]))
-        self.canvas.draw()
+            try:
+                fit_values = self.fit_plot(self.function, self.params, self.lineout_data[minimum:maximum, :])
+            except (RuntimeError, ValueError):
+                logging.warning("Lineout fit update skipped because the fit did not converge.")
+            else:
+                self.fit_lineout.set_ydata(fit_values)
+        self.canvas.draw_idle()
 
     def update_lineout_aspect(self):
         self.ax_second.set_aspect(abs(self.asp)/(self.clim[1]-self.clim[0]))
@@ -1881,15 +2005,20 @@ class App(customtkinter.CTk):
     def load_fourier_trafo(self):
         row = 15
         self.FFT_title    = self.create_label( self.settings_frame,column=0, row=row, text="Fourier Transform", font=customtkinter.CTkFont(size=16, weight="bold"), columnspan=5, padx=20, pady=(20, 5),sticky=None)
-        self.save_FFT_button = self.create_button(self.settings_frame, column = 3, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=80, columnspan=2)
+        self.save_FFT_button = self.create_button(self.settings_frame, column = 3, row=row+1, text="Save FFT", command= lambda: self.save_data_file(self.FFT_data), width=100, columnspan=2)
         self.padd_zeros_textval  = self.create_label( self.settings_frame,column=1, columnspan=2, row=row+1, text=str(0), sticky="n", anchor="n", fg_color="transparent")
         self.padd_zeros_slider, self.padd_zeros_label = self.create_slider(self.settings_frame, from_=0, to=10, command= self.update_FFT, row=row+1, column=1, columnspan=2, init_val=0, number_of_steps=10, width=120, text="padd 0's", padx=(10,0), textwidget=True)
-        self.FFT_borders_slider, self.FFT_borders_label = self.create_range_slider(self.settings_frame, from_=0, to=1, command= self.update_FFT, row=row+2, column =1, width=120, columnspan=2, text="FFT lims", padx=(10,0), textwidget=True)
+        self.FFT_borders_slider, self.FFT_borders_label = self.create_range_slider(self.settings_frame, from_=0, to=1, command=self.update_FFT, row=row+2, column=1, width=120, columnspan=2, text="FFT limits", padx=(10,0), textwidget=True)
+        self.FFT_xlabel_entry, self.FFT_xlabel_label = self.create_entry(self.settings_frame, column=1, row=row+3, columnspan=2, width=110, text="FFT x-axis", init_val="time in fs", textwidget=True)
+        self.FFT_legend_entry, self.FFT_legend_label = self.create_entry(self.settings_frame, column=1, row=row+4, columnspan=2, width=110, text="FFT legend", init_val="FFT", textwidget=True)
+        self.FFT_labels_button = self.create_button(self.settings_frame, column=3, row=row+4, text="Update", command=self.update_fft_labels, width=100, columnspan=2, image=self.img_reset)
+        for widget in (self.FFT_xlabel_entry, self.FFT_xlabel_label, self.FFT_legend_entry, self.FFT_legend_label, self.FFT_labels_button):
+            widget.grid_remove()
         self.fourier_trafo()
             
     def fourier_trafo(self):
         row = 15
-        widget_names = ["FFT_title", "save_FFT_button", "FFT_borders_slider", "padd_zeros_textval", "padd_zeros_slider", "padd_zeros_label", "FFT_borders_label"]
+        widget_names = ["FFT_title", "save_FFT_button", "FFT_borders_slider", "FFT_borders_label", "padd_zeros_textval", "padd_zeros_slider", "padd_zeros_label", "FFT_xlabel_entry", "FFT_xlabel_label", "FFT_legend_entry", "FFT_legend_label", "FFT_labels_button"]
 
         if self.image_plot == True:
             self.FFT_button.deselect()
@@ -1910,14 +2039,13 @@ class App(customtkinter.CTk):
             self.settings_frame.grid()
             [getattr(self, name).grid() for name in widget_names]
 
-            self.FFT_borders_slider.configure(from_= np.min(self.data[:,0]), to=np.max(self.data[:,0]))
-            self.FFT_borders_slider.set([np.min(self.data[:,0]),np.max(self.data[:,0])])
-            
+            self.FFT_borders_slider.configure(from_=np.min(self.data[:, 0]), to=np.max(self.data[:, 0]))
+            self.FFT_borders_slider.set([np.min(self.data[:, 0]), np.max(self.data[:, 0])])
             self.initialize_FFT()
         else:
             [getattr(self, name).grid_remove() for name in widget_names]
-            self.multiplot_button.configure(state="enabled")
-            self.lineout_button.configure(state="enabled")
+            self.multiplot_button.configure(state="normal")
+            self.lineout_button.configure(state="normal")
             self.settings_frame.rowconfigure(row+1, minsize=0)
             self.replot = False
             self.close_settings_window()
@@ -1932,17 +2060,30 @@ class App(customtkinter.CTk):
 
         self.FFT_data = self.Fourier_transform("data")
         self.FFT_plot = self.make_line_plot("FFT_data", "ax_second")
+        self.update_fft_labels()
 
         # Determine the width of the displayed FT window
         argmax = np.argmax(self.FFT_data[:,1])
-        width = np.max(np.argwhere(self.FFT_data[:,1] > 1e-3*np.max(self.FFT_data[:,1]))) - argmax + int(0.01*len(self.FFT_data[:,1])/(self.padd_zeros_slider.get()+1))
-        self.ax_second.set_xlim(self.FFT_data[argmax-width, 0], self.FFT_data[argmax+width, 0])
+        above_threshold = np.argwhere(self.FFT_data[:, 1] > 1e-3 * np.max(self.FFT_data[:, 1]))
+        edge = int(0.01 * len(self.FFT_data[:, 1]) / (self.padd_zeros_slider.get() + 1))
+        width = int(np.max(above_threshold) - argmax + edge) if above_threshold.size else edge
+        left = max(0, argmax - width)
+        right = min(len(self.FFT_data) - 1, argmax + width)
+        self.ax_second.set_xlim(self.FFT_data[left, 0], self.FFT_data[right, 0])
 
-        self.canvas.draw()
+        self.canvas.draw_idle()
     
     def Fourier_transform(self, dat):
         dat = getattr(self, dat)
-        data = dat[np.argmin(abs(self.FFT_borders_slider.get()[0]-dat[:,0])):np.argmin(abs(self.FFT_borders_slider.get()[1]-dat[:,0])),:]
+        left, right = self.FFT_borders_slider.get()
+        start = np.argmin(abs(left - dat[:, 0]))
+        stop = np.argmin(abs(right - dat[:, 0]))
+        if stop <= start:
+            raise ValueError("FFT limits must contain a non-empty interval.")
+        data = dat[start:stop + 1]
+        if np.any(data[:, 0] == 0):
+            raise ValueError("FFT requires non-zero x values in nm.")
+        # The input x axis is interpreted as wavelength in nanometres.
         freq = 3e8/(data[:,0]*1e-9)
         interp_func = interp1d(freq, data[:,1], kind='linear', bounds_error = False, fill_value=0)
         freq_points = np.linspace(freq.min(),freq.max(), len(data[:,0]))
@@ -1953,19 +2094,40 @@ class App(customtkinter.CTk):
         freq_points = np.pad(freq_points, (padding,padding), mode='linear_ramp', end_values=(freq_points[0]-padding*Delta_w,freq_points[-1]+padding*Delta_w))
 
         FFT_data = abs(np.fft.fft(np.sqrt(abs(interp_spec))))**2
+        maximum = np.max(FFT_data)
+        if maximum > 0:
+            FFT_data /= maximum
         FFT_data = np.fft.fftshift(FFT_data)
         FFT_freq = np.fft.fftfreq(freq_points.size, d = 1e-15*Delta_w)
         FFT_freq = np.fft.fftshift(FFT_freq)
         FFT_data = np.vstack((FFT_freq, FFT_data)).T
         return FFT_data
 
-    def update_FFT(self, val):
-        try:
-            self.FFT_xmin_line.set_xdata([self.FFT_borders_slider.get()[0]])
-            self.FFT_xmax_line.set_xdata([self.FFT_borders_slider.get()[1]])
-        except:
-            self.create_FFT_border_lines("ax1")
+    def update_fft_labels(self):
+        if not hasattr(self, "ax_second") or self.ax_second is None:
+            return
+        self.ax_second.set_xlabel(self.FFT_xlabel_entry.get())
+        self.FFT_plot.set_label(self.FFT_legend_entry.get())
+        legend = self.ax_second.get_legend()
+        if legend is not None:
+            legend.remove()
+        if self.FFT_legend_entry.get():
+            self.ax_second.legend(
+                [self.FFT_plot],
+                [self.FFT_legend_entry.get()],
+                fontsize=self.legend_font_size,
+                fancybox=True,
+                **self.legend_type,
+            )
+        self.canvas.draw_idle()
 
+    def update_FFT(self, val):
+        if not hasattr(self, "FFT_plot"):
+            return
+        if self.FFT_xmin_line is not None and self.FFT_xmax_line is not None:
+            left, right = self.FFT_borders_slider.get()
+            self.FFT_xmin_line.set_xdata([left, left])
+            self.FFT_xmax_line.set_xdata([right, right])
         self.padd_zeros_textval.configure(text=str(self.padd_zeros_slider.get()))
         self.FFT_data = self.Fourier_transform("data")
         self.FFT_plot.set_xdata(self.FFT_data[:,0])
@@ -1974,12 +2136,47 @@ class App(customtkinter.CTk):
             minimum = np.argmin(abs(self.FFT_data[:,0] - self.fit_window.fit_borders_slider.get()[0]))
             maximum = np.argmin(abs(self.FFT_data[:,0] - self.fit_window.fit_borders_slider.get()[1]))
             self.fit_lineout.set_xdata(self.FFT_data[minimum:maximum,0])
-            self.fit_lineout.set_ydata(self.fit_plot(self.function, self.params, self.FFT_data[minimum:maximum,:]))
-        self.canvas.draw()
+            try:
+                fit_values = self.fit_plot(self.function, self.params, self.FFT_data[minimum:maximum, :])
+            except (RuntimeError, ValueError):
+                logging.warning("FFT fit update skipped because the fit did not converge.")
+            else:
+                self.fit_lineout.set_ydata(fit_values)
+        self.canvas.draw_idle()
 
     #############################################################
     ##################### Misc. Functions #######################
     #############################################################
+
+    def initialize_console(self):
+        console_frame = self.tabview.tab("Console")
+        console_frame.rowconfigure(1, weight=1)
+        console_frame.columnconfigure(0, weight=1)
+        self.logging_level = self.create_segmented_button(
+            console_frame, values=["Normal", "Debugging"], command=self.set_logging_level,
+            row=0, column=0, width=180, sticky="w", padx=10
+        )
+        self.logging_level.set("Normal")
+        self.console_text = customtkinter.CTkTextbox(console_frame, wrap="none")
+        self.console_text.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.clear_console_button = self.create_button(
+            console_frame, text="Clear", command=lambda: self.console_text.delete("1.0", "end"),
+            row=2, column=0, width=80, sticky="w", padx=10
+        )
+        self.log_handler = TkLoggingHandler(self)
+        self.log_handler.setFormatter(logging.Formatter("[%(levelname)s] %(asctime)s - %(message)s"))
+        root_logger = logging.getLogger()
+        root_logger.addHandler(self.log_handler)
+        root_logger.setLevel(logging.INFO)
+    
+    def set_logging_level(self, value):
+        logging.getLogger().setLevel(logging.DEBUG if value == "Debugging" else logging.INFO)
+
+    def append_log_message(self, message):
+        if not self.console_text.winfo_exists():
+            return
+        self.console_text.insert("end", message + "\n")
+        self.console_text.see("end")
 
     def save_data_file(self, data):
         file_name = customtkinter.filedialog.asksaveasfilename()
@@ -2004,7 +2201,7 @@ class App(customtkinter.CTk):
         else:
             self.control_z()
             self.plot()
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
     def normalize(self):
         if self.image_plot:
@@ -2018,17 +2215,18 @@ class App(customtkinter.CTk):
 
             self.clim = (lower_bound, upper_bound)
         elif self.normalize_function == "Maximum":
-            self.data[:, 1:] /= np.max(self.data[:, 1]) / self.normalize_value
+            maxima = np.max(np.abs(self.data[:, 1:]), axis=0)
+            self.data[:, 1:] /= np.where(maxima == 0, 1, maxima) / self.normalize_value
         elif self.normalize_function == "Area":
-            self.data[:, 1:] /= (np.sum(self.data[:, 1]) * abs(self.data[0,0]-self.data[1,0])) / self.normalize_value
+            trapezoid = getattr(np, "trapezoid", np.trapz)
+            areas = trapezoid(self.data[:, 1:], self.data[:, 0], axis=0)
+            self.data[:, 1:] /= np.where(areas == 0, 1, areas) / self.normalize_value
         elif self.normalize_function == "Only Factor":
             self.data[:, 1:] *= self.normalize_value
 
-        self.ymax = max([self.ymax, np.max(self.data[:, 1])])
+        self.ymax = max(self.ymax, np.max(self.data[:, 1:]))
 
     def create_toolbar(self) -> customtkinter.CTkFrame:
-        # toolbar_frame = customtkinter.CTkFrame(master=self.tabview.tab("Show Plots"))
-        # toolbar_frame.grid(row=1, column=0, sticky="ew")
         toolbar_frame = customtkinter.CTkFrame(self)
         toolbar_frame.grid(row=20, column=1, columnspan=2, padx=(10), sticky="ew")
         toolbar = CustomToolbar(self.canvas, toolbar_frame)
@@ -2047,18 +2245,26 @@ class App(customtkinter.CTk):
 
     # Check if there are any non-number characters in the file and skip these lines
     def skip_rows(self, file_path):
+        with open(file_path, "r", encoding="utf-8-sig") as file:
+            lines = file.readlines()
         skiprows = 0
-        for line in open(file_path, 'r'):
-            if line[0].isdigit() or (line[0] == " " and line[1].isdigit()) or (line[0] == "-" and line[1].isdigit()):
-                break
-            else:
-                skiprows += 1
+        for index, line in enumerate(lines):
+            try:
+                data, _ = _parse_numeric_lines(lines[index:])
+                if data.size:
+                    skiprows = index
+                    break
+            except ValueError:
+                continue
         if skiprows > 0: logging.info(f"There were {skiprows} head lines detected and skipped.")
         return skiprows
 
     # Save the current figure or the data based on the file type
     def save_figure(self):
-        file_name = customtkinter.filedialog.asksaveasfilename()
+        file_name = customtkinter.filedialog.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[("Figure", "*.png *.pdf *.svg"), ("Data", "*.csv *.txt *.dat")]
+        )
         if (self.image_plot and self.save_plain_image.get() and file_name.endswith((".pdf",".png",".jpg",".jpeg",".PNG",".JPG",".svg"))):
             if self.uselims_button.get(): 
                 plt.imsave(file_name, np.flipud(self.data[int(self.y_l):int(self.y_r),int(self.x_l):int(self.x_r)]), cmap=self.cmap_imshow)
@@ -2068,15 +2274,32 @@ class App(customtkinter.CTk):
             self.fig.savefig(file_name, bbox_inches='tight')
         elif file_name.endswith((".dat",".txt",".csv")):
             if self.image_plot:
-                np.savetxt(file_name, self.data.astype(int), fmt='%i')
+                np.savetxt(file_name, self.data, fmt="%.8g")
             else:
                 # np.savetxt(file_name, self.data)
                 all_data = []
                 headers = []
+                data_line_ids = set()
+                for plot_group in getattr(self, "plot_container", []) or []:
+                    container = plot_group[0] if isinstance(plot_group, tuple) else plot_group
+                    if hasattr(container, "lines") and container.lines:
+                        data_line_ids.add(id(container.lines[0]))
 
-                # Collect data
+                # Collect only plotted data, excluding fit/border/annotation helpers.
                 for i, ax in enumerate(self.fig.axes):
                     for j, line in enumerate(ax.get_lines()):
+                        if data_line_ids and id(line) not in data_line_ids:
+                            continue
+                        if line in {getattr(self, "fit_xmin_line", None),
+                                    getattr(self, "fit_xmax_line", None),
+                                    getattr(self, "FFT_xmin_line", None),
+                                    getattr(self, "FFT_xmax_line", None),
+                                    getattr(self, "fit_lineout", None),
+                                    getattr(self, "axline", None),
+                                    getattr(self, "axpoint", None)}:
+                            continue
+                        if not line.get_label() or line.get_label().startswith("_"):
+                            continue
                         x = line.get_xdata()
                         y = line.get_ydata()
                         # make sure lengths match if different lines differ
@@ -2085,6 +2308,9 @@ class App(customtkinter.CTk):
                         headers.extend([f"X{i}_{j}", f"Y{i}_{j}"])
 
                 # Align all datasets by rows (pad with blanks if needed)
+                if not all_data:
+                    logging.warning("No plotted data available for export.")
+                    return
                 max_len = max(arr.shape[0] for arr in all_data)
                 aligned = np.full((max_len, len(all_data)*2), "", dtype=object)
 
@@ -2099,19 +2325,13 @@ class App(customtkinter.CTk):
 
     # Open a file and count the number of . and , to decide the delimiter
     def open_file(self, file_path) -> str:
-        try:
-            with open(file_path, 'r') as file:
-                content = file.read()
-        except Exception as e:
-            logging.error(f"Error reading the file: {e}")
-            return
-
-        if content.count('.') >= content.count(','):
-            return '.'
-        elif content.count('.') < content.count(','):
-            return ','
-        else:
-            logging.warning("No decimal separators (commas or dots) were found in the file.")
+        with open(file_path, "r", encoding="utf-8-sig") as file:
+            content = file.read()
+        comma_numbers = len(re.findall(r"[-+]?\d+,\d+", content))
+        dot_numbers = len(re.findall(r"[-+]?\d+\.\d+", content))
+        decimal = "," if comma_numbers > dot_numbers else "."
+        logging.debug("Detected decimal separator %r in %s", decimal, file_path)
+        return decimal
     
     def change_appearance_mode_event(self, new_appearance_mode: str):
         new_appearance_mode = new_appearance_mode.replace("Appearance: ", "")
@@ -2128,6 +2348,10 @@ class App(customtkinter.CTk):
 
     def toggle_boolean(self, boolean):
         boolean.set(not boolean.get())
+
+    def toggle_fit_params(self):
+        self.display_fit_params_in_plot.set(not bool(self.settings_hide_params_button.get()))
+        self.apply_settings(None)
 
     # Close settings window if it is no longer needed
     def close_settings_window(self):
@@ -2149,11 +2373,15 @@ class App(customtkinter.CTk):
                 self.fit_window = cls(self)  # create window if its None or destroyed
                 self.initialize()
         else:
-            self.fit_window.close_window()
+            if hasattr(self, "fit_window") and self.fit_window.winfo_exists():
+                self.fit_window.close_window()
+                self.fit_window.destroy()
+            for name in ("fit_xmin_line", "fit_xmax_line"):
+                line = getattr(self, name, None)
+                if line is not None:
+                    line.remove()
+                    setattr(self, name, None)
             self.close_settings_window()
-            self.fit_window.destroy()
-            self.fit_xmin_line.remove()
-            self.fit_xmax_line.remove()
 
     # Closing the application       
     def on_closing(self):
@@ -2181,12 +2409,8 @@ class App(customtkinter.CTk):
                 if self.uselabels_button.get() and self.update_labels_multiplot.get():
                     self.ent_xlabel.reinsert(0, self.ax1.xaxis.get_label().get_text())  # reinsert the old x- and y-labels
                     self.ent_ylabel.reinsert(0, self.ax1.yaxis.get_label().get_text())
-                    # try:
-                    #     _, label = self.ax1.get_legend_handles_labels()
-                    #     self.ent_legend.reinsert(0, label[0])
-                    # except:
-                    #     pass
-                self.plot_axis_parameters
+
+                self.plot_axis_parameters("ax1", plot_counter=self.plot_counter)
             else:
                 ax1.set_facecolor('white')
         
@@ -2223,7 +2447,7 @@ class App(customtkinter.CTk):
 
         # Change the alpha on the line in the legend, so we can see what lines have been toggled.
         legend_line.set_alpha(1.0 if visible else 0.2)
-        self.canvas.draw() 
+        self.canvas.draw_idle()
     
     def change_plot_visibility(self, ax_line, visibility):
         for a in ax_line[0].get_children():
@@ -2242,8 +2466,8 @@ class App(customtkinter.CTk):
 """
 
 class LegendWindow(customtkinter.CTkToplevel):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, app, *args, **kwargs):
+        super().__init__(app, *args, **kwargs)
         self.geometry("600x250")
         self.title("Legend Settings")
         self.app = app
@@ -2334,16 +2558,16 @@ class LegendWindow(customtkinter.CTkToplevel):
 '''         
 # neues Fenster
 class FitWindow(customtkinter.CTkFrame):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, app, *args, **kwargs):
+        super().__init__(app, *args, **kwargs)
         self.app = app
         self.row = 20
         self.widget_dict = {}
         self.fitted_label_string = ""
-        self.labels_title = self.app.create_label(app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row , column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
+        self.labels_title = self.app.create_label(self.app.settings_frame, text="Fit Function", font=customtkinter.CTkFont(size=16, weight="bold"),row=self.row , column=0, columnspan=5, padx=20, pady=(20, 5),sticky=None)
         self.function = {'Gaussian': gauss, 'Gaussian 3rd': gauss3, 'Lorentz': lorentz, 'Linear': linear, 'Quadratic': quadratic, 'Exponential': exponential, 'Logarithmic': logarithm ,'Square Root': sqrt, 'Hyperbola': hyperbola}
 
-        self.function_label = self.app.create_label(app.settings_frame, text="", column=1, row=self.row +1, width=80, columnspan=4, anchor='e', sticky="w", pady=(0,10))
+        self.function_label = self.app.create_label(self.app.settings_frame, text="", column=1, row=self.row +1, width=80, columnspan=4, anchor='e', sticky="w", pady=(0,10))
         self.function_label_list = {'Gaussian': ["f(x) = a·exp(-2(x-b)²/c²) + d", r"f(x) = a \cdot \exp\left(-2\,\dfrac{(x-b)^2}{c^2}\right) + d"], 
                                     'Gaussian 3rd': ["f(x) = a·exp(-2|x-b|³/c²) + d", r"f(x) = a \cdot \exp\left(-2\,\dfrac{|x-b|^3}{c^2}\right) + d"], 
                                     'Lorentz': ["f(x) = a²/[(x²-b²)² + c²·b²]+d", r"f(x) = \dfrac{a^2}{(x^2 - b^2)^2 + c^2 \cdot b^2}+d"],
@@ -2354,19 +2578,19 @@ class FitWindow(customtkinter.CTkFrame):
                                     'Square Root': ["f(x) = a·sqrt(b·x) + c", r"f(x) = a\sqrt{b\cdot x} + c"],
                                     'Hyperbola': ["f(x) = a/(x-b) + c", r"f(x) = \dfrac{a}{x-b} + c"]
                                     }
-        self.function_list_label = self.app.create_label(app.settings_frame,text="Fit", column=0,row=self.row +2, sticky="e")
-        self.function_list = self.app.create_Menu(app.settings_frame, values=list(self.function.keys()), command=self.create_params, width=110, column=1, row=self.row +2, columnspan=2, sticky="w")
+        self.function_list_label = self.app.create_label(self.app.settings_frame,text="Fit", column=0,row=self.row +2, sticky="e")
+        self.function_list = self.app.create_Menu(self.app.settings_frame, values=list(self.function.keys()), command=self.create_params, width=110, column=1, row=self.row +2, columnspan=2, sticky="w")
         self.function_list.set('Gaussian')
 
-        if app.lineout_button.get():
-            self.data = app.lineout_data
+        if self.app.lineout_button.get():
+            self.data = self.app.lineout_data
         else:
-            self.data = app.data
+            self.data = self.app.data
 
-        self.save_fit_button = self.app.create_button(app.settings_frame, column = 3, row=self.row+2, text="Save fit", command= lambda: app.save_data_file(np.vstack([self.data[:,0], app.fit_plot(app.function, app.params, self.data)]).T), width=110, columnspan=2)
-        if (not app.image_plot or app.lineout_button.get()):
-            self.fit_borders_slider = self.app.create_range_slider(app.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= lambda val=None: app.update_plot(val), row=self.row+3, column =1, width=180, padx=(10,10), columnspan=4, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])])
-            self.fit_borders_label = self.app.create_label(app.settings_frame, row=self.row+3, column=0, text="borders")
+        self.save_fit_button = self.app.create_button(self.app.settings_frame, column = 3, row=self.row+2, text="Save fit", command= lambda: self.app.save_data_file(np.vstack([self.data[:,0], self.app.fit_plot(self.app.function, self.app.params, self.data)]).T), width=110, columnspan=2)
+        if (not self.app.image_plot or self.app.lineout_button.get()):
+            self.fit_borders_slider = self.app.create_range_slider(self.app.settings_frame, from_=np.min(self.data[:,0]), to=np.max(self.data[:,0]), command= lambda val=None: self.app.update_plot(val), row=self.row+3, column =1, width=180, padx=(10,10), columnspan=4, init_value=[np.min(self.data[:,0]), np.max(self.data[:,0])])
+            self.fit_borders_label = self.app.create_label(self.app.settings_frame, row=self.row+3, column=0, text="borders")
 
         self.params = []
         self.error = []
@@ -2376,12 +2600,12 @@ class FitWindow(customtkinter.CTkFrame):
 
         self.widget_dict['str_var_FWHM'] = customtkinter.StringVar()
         self.create_params('Gaussian')
-        app.settings_frame.grid()
+        self.app.settings_frame.grid()
     
     # Function to render LaTeX using Matplotlib
     def render_latex_to_image(self, latex_code):
         fig, ax = plt.subplots()
-        text = ax.text(0.5, 0.5, f'${latex_code}$', fontsize=10, ha='center', va='center', color=app.text_color)
+        text = ax.text(0.5, 0.5, f'${latex_code}$', fontsize=10, ha='center', va='center', color=self.app.text_color)
         ax.axis('off')
 
         # Draw the canvas to update the text position
@@ -2427,31 +2651,38 @@ class FitWindow(customtkinter.CTkFrame):
     
     # Create Fit parameter widget, its name label widget and a string Variable to hold the label vlue
     def create_widget(self, name, arg_number):
-        self.widget_dict[f'fit_{name}'], self.widget_dict[f'fitlabel_{name}'] = self.app.create_entry(app.settings_frame, column=1, row=self.row + arg_number + 4, width=80, placeholder_text="0", sticky='w', columnspan=2, text=name, textwidget=True)
+        self.widget_dict[f'fit_{name}'], self.widget_dict[f'fitlabel_{name}'] = self.app.create_entry(self.app.settings_frame, column=1, row=self.row + arg_number + 4, width=80, placeholder_text="0", sticky='w', columnspan=2, text=name, textwidget=True)
         self.widget_dict[f'str_var_{name}'] = customtkinter.StringVar() # StringVar to hold the label value
-        self.widget_dict[f'fitted_{name}'] = self.app.create_label(app.settings_frame, textvariable=self.widget_dict[f'str_var_{name}'], column=3, width=50, row=self.row + arg_number + 4, padx=(0, 20), columnspan=2)
+        self.widget_dict[f'fitted_{name}'] = self.app.create_label(self.app.settings_frame, textvariable=self.widget_dict[f'str_var_{name}'], column=3, width=50, row=self.row + arg_number + 4, padx=(0, 20), columnspan=2)
     
     # Write the fitted parameter values in the labels
     def set_fitted_values(self, params, error):
         self.fitted_label_string = self.function_label_list[self.function_list.get()][0] 
-        for i,name in enumerate(["a","b","c","d","FWHM"]):
-            if self.function_name == "Gaussian":
-                self.number_of_args += 1
-                params = np.append(params, np.sqrt(2*np.log(2))*params[2]) 
-                error = np.pad(error, ((0, 1), (0, 1)), mode='constant')
-                error[-1,-1] = error[2,2] * params[-1]
-            
-            if i >= self.number_of_args: break   # take only the right number of arguments
-            self.params = params
-            self.error = error
-            
+        display_params = np.asarray(params)
+        display_error = np.asarray(error)
+        display_names = ["a", "b", "c", "d"]
+        if self.function_name == "Gaussian":
+            display_params = np.append(display_params, np.sqrt(2 * np.log(2)) * display_params[2])
+            display_error = np.pad(display_error, ((0, 1), (0, 1)), mode="constant")
+            display_error[-1, -1] = 2 * np.log(2) * display_error[2, 2]
+            display_names.append("FWHM")
+
+        for i, name in enumerate(display_names):
+            if i >= len(display_params): break
+            self.params = display_params
+            self.error = display_error
 
             try:
-                round_digit = -int(np.floor(np.log10(abs(np.sqrt(error[i,i])))))
-            except:
+                round_digit = -int(np.floor(np.log10(abs(np.sqrt(display_error[i, i])))))
+            except (ValueError, IndexError, FloatingPointError):
                 round_digit = 4
-            self.widget_dict[f'str_var_{name}'].set(str(round(params[i],round_digit))+" ± "+str(round(np.sqrt(error[i,i]),round_digit)))
-            self.fitted_label_string += "\n" + name + " = " + self.widget_dict[f'str_var_{name}'].get()
+            value_text = (
+                str(round(display_params[i], round_digit)) + " ± " +
+                str(round(np.sqrt(display_error[i, i]), round_digit))
+            )
+            if name in ("a", "b", "c", "d"):
+                self.widget_dict[f'str_var_{name}'].set(value_text)
+            self.fitted_label_string += "\n" + name + " = " + value_text
     
     # display values in the textbox, function is used in app.plot()
     def get_fitted_labels(self):
@@ -2475,7 +2706,7 @@ class FitWindow(customtkinter.CTkFrame):
                     self.app.params[0] = np.sqrt(np.max(data[:,1]))*data[np.argmax(data[:,1]),0]
 
         self.app.function = self.function[self.function_list.get()]
-        self.app.use_fit = app.fit_button.get()
+        self.app.use_fit = self.app.fit_button.get()
         
     def close_window(self):
         for name in ["a","b","c","d"]:
@@ -2483,7 +2714,7 @@ class FitWindow(customtkinter.CTkFrame):
     
         widget_names = ["labels_title", "function_list", "function_list_label", "function_label", "fit_borders_slider", "fit_borders_label", "save_fit_button"]
         [getattr(self, name).grid_remove() for name in widget_names]
-        self.app.use_fit = app.fit_button.get()
+        self.app.use_fit = self.app.fit_button.get()
 
 
 class CreateToolTip(object):
